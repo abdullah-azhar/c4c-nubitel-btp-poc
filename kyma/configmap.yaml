@@ -8,9 +8,9 @@ data:
   # Only the (mock) Nubitel may postMessage to the view.
   MESSAGE_ORIGINS: "https://c4c-nubitel-btp-poc.vercel.app"
   # Browsers check the whole ancestor chain: Nubitel AND the C4C tenant.
-  # Replace REPLACE-WITH-TENANT, then: kubectl apply -k kyma/ && kubectl rollout restart deploy/c4c-lean-view -n c4c-poc
-  FRAME_ANCESTORS: "https://c4c-nubitel-btp-poc.vercel.app,https://REPLACE-WITH-TENANT.crm.ondemand.com"
-  C4C_UI_URL: "https://REPLACE-WITH-TENANT.crm.ondemand.com"
+  # After changing this file: kubectl apply -k kyma/ && kubectl rollout restart deploy/c4c-lean-view -n c4c-poc
+  FRAME_ANCESTORS: "https://c4c-nubitel-btp-poc.vercel.app,https://my335945.crm.ondemand.com"
+  C4C_UI_URL: "https://my335945.crm.ondemand.com"
   # Keep mock until the C4C queries are confirmed. Never real customer data on a trial account.
   DATA_SOURCE: "mock"
   SECTION_TIMEOUT_MS: "6000"

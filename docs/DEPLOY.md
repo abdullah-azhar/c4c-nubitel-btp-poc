@@ -77,7 +77,10 @@ You will set its environment in step 4, once you have the Vercel URL.
    | `DATA_SOURCE` | `mock` |
 
    Redeploy after adding them (Deployments → … → Redeploy).
-4. **Turn off Deployment Protection** for production
+4. **Check Deployment Protection.** With the default *Standard Protection* the
+   production address `https://<project>.vercel.app` is public, which is what
+   C4C needs (only the per-deployment URLs ask for a Vercel login). If your
+   project is set to protect *all* deployments, switch it to Standard
    (Project → Settings → Deployment Protection), or Vercel shows a login page
    inside the C4C iframe.
 5. Use the **production** URL, `https://<project>.vercel.app`, everywhere.

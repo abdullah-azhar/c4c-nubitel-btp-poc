@@ -110,8 +110,10 @@ list the Vercel address and your C4C tenant under `frame-ancestors`.
    kubectl apply -k kyma/
    kubectl rollout restart deploy/c4c-lean-view -n c4c-poc
    ```
-3. Turn off Vercel Deployment Protection, then continue with `DEPLOY.md` section 5
-   (add the Vercel address to C4C as a mashup).
+3. Use the production address `https://<project>.vercel.app/` in C4C. With
+   Vercel's default Standard Protection that address is public, while the long
+   per-deployment URLs ask for a Vercel login, so never use those in C4C.
+   Then continue with `DEPLOY.md` section 5 (add the address to C4C as a mashup).
 
 ## Troubleshooting
 
