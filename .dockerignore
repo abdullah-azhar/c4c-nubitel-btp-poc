@@ -1,0 +1,16 @@
+.git
+.github
+.vercel
+.env
+.env.*
+node_modules
+*.zip
+*.log
+api
+docs
+kyma
+local
+manifest.yml
+vercel.json
+mock-nubitel
+mock-c4c-host

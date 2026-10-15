@@ -1,0 +1,22 @@
+# Exposes the view on the Kyma cluster's own domain:
+#   https://c4c-lean-view.<cluster-domain>/
+# noAuth is intended: the page itself is public (it holds no data), and the data
+# API checks the signed token (Option B). Only GET/HEAD are allowed through.
+#
+# Uses the gateway.kyma-project.io/v2 API. If your cluster only has an older
+# version, check: kubectl get crd apirules.gateway.kyma-project.io -o jsonpath='{.spec.versions[*].name}'
+apiVersion: gateway.kyma-project.io/v2
+kind: APIRule
+metadata:
+  name: c4c-lean-view
+spec:
+  hosts:
+    - c4c-lean-view
+  service:
+    name: c4c-lean-view
+    port: 8080
+  gateway: kyma-system/kyma-gateway
+  rules:
+    - path: /{**}
+      methods: ["GET", "HEAD"]
+      noAuth: true

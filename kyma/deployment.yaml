@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: c4c-lean-view
+  labels:
+    app: c4c-lean-view
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: c4c-lean-view
+  template:
+    metadata:
+      labels:
+        app: c4c-lean-view
+    spec:
+      # Only needed when the image is in a private registry. A missing secret is
+      # harmless for a public image (Kubernetes just warns).
+      imagePullSecrets:
+        - name: regcred
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: c4c-lean-view
+          # The registry and tag are set in kustomization.yaml (images:).
+          image: c4c-lean-view
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: c4c-lean-view-config
+            # TOKEN_SECRET. Created with kubectl, never stored in a file. See docs/KYMA.md.
+            # Required on purpose: without it the pod does not start, so the view
+            # can never run on the built-in POC default secret.
+            - secretRef:
+                name: c4c-lean-view-secret
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

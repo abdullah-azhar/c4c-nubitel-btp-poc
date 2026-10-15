@@ -1,6 +1,10 @@
 node_modules/
 .env
+.env.local
 *.log
 *.zip
 local/screens/
 .vercel/
+# Never commit cluster credentials
+kubeconfig*
+*.kubeconfig

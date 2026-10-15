@@ -3,6 +3,10 @@
 Order matters: deploy the BTP view first (you need its URL for Vercel), then
 Vercel, then come back and give the BTP view the Vercel URL.
 
+> **On SAP BTP Kyma instead of Cloud Foundry?** Follow `docs/KYMA.md` for the
+> BTP view (container image, `kyma/` manifests). Sections 3 and 5 of this guide
+> (Vercel and the C4C mashup) stay the same.
+
 Keep `DATA_SOURCE=mock` on both. Personal Vercel and BTP trial accounts are not
 company-controlled: no C4C credentials or real customer data there.
 

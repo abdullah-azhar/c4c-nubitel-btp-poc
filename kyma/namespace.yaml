@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: c4c-poc
+  labels:
+    # Kyma needs the Istio sidecar for a workload that is exposed through an APIRule.
+    istio-injection: enabled

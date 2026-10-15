@@ -2,5 +2,9 @@ btp-view/
 mock-c4c-host/
 local/
 docs/
+kyma/
+.github/
+Dockerfile
+.dockerignore
 manifest.yml
 *.zip

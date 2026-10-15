@@ -1,0 +1,15 @@
+# Apply everything with:  kubectl apply -k kyma/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: c4c-poc
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - apirule.yaml
+# Where the image lives. Change newName/newTag to match the registry you push to.
+images:
+  - name: c4c-lean-view
+    newName: ghcr.io/abdullah-azhar/c4c-lean-view
+    newTag: "0.1.0"
