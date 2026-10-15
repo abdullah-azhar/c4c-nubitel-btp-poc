@@ -90,7 +90,7 @@ The view and the mock Nubitel must share one value for Option B.
 ## 5. Find the address and check it
 
 ```powershell
-kubectl get gateway kyma-gateway -n kyma-system -o jsonpath='{.spec.servers[0].hosts[0]}'
+kubectl get gateways.networking.istio.io kyma-gateway -n kyma-system -o jsonpath='{.spec.servers[0].hosts[0]}'
 # prints *.<id>.kyma.ondemand.com  ->  your view is https://c4c-lean-view.<id>.kyma.ondemand.com/
 kubectl get apirule c4c-lean-view -n c4c-poc      # STATE should be Ready
 curl.exe -s https://c4c-lean-view.<id>.kyma.ondemand.com/health
