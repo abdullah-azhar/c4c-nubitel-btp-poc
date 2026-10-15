@@ -21,6 +21,8 @@ const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); c
   const page = await browser.newPage({ viewport: { width: 1500, height: 820 } });
   const consoleErrors = [];
   page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
+  let apiCalls = 0; // data calls the BTP view makes itself in Option B
+  page.on('request', (r) => { if (r.url().startsWith('http://localhost:8083/api/')) apiCalls++; });
 
   await page.goto(HOST);
   const nb = page.frameLocator('.mashup-slot iframe');
@@ -106,7 +108,101 @@ const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); c
   check('Nubitel refuses to load inside a non-approved host', !nbRendered, `rendered=${nbRendered}`);
   await evil.close();
 
-  // 11. Mashup rebuilt on navigation drops Nubitel (reload counter)
+  // 11. Saved copy and Refresh. Needs the servers started with CACHE_TTL_SECONDS=12 (see README).
+  const queries = async () => Number((await nb.locator('#calls').textContent()).match(/queries:\s*(\d+)/)[1]);
+  // freshLoad: loading placeholders appear and then all go away (the chat really was queried).
+  // settled: nothing is loading any more (also true at once for a chat shown from the saved copy).
+  const freshLoad = async () => {
+    await view.locator('.skel').first().waitFor({ state: 'attached', timeout: 5000 });
+    await view.locator('.skel').first().waitFor({ state: 'detached', timeout: 12000 });
+  };
+  const settled = () => view.locator('.skel').first().waitFor({ state: 'detached', timeout: 12000 });
+  const cacheTxt = () => view.locator('#diagCache').textContent();
+  const open = (name) => nb.locator('#convList li', { hasText: name }).click();
+
+  // 11a. Entries expire: a chat saved more than 12 s ago is loaded again from C4C
+  await nb.locator('#mode').selectOption('push'); // reloads Jenna fresh through option A
+  await view.locator('#diagMode', { hasText: 'A (push)' }).waitFor({ timeout: 5000 });
+  await freshLoad();
+  await page.waitForTimeout(13000);
+  const q0 = await queries();
+  await open('Jenna Hopkins');
+  await freshLoad();
+  const q1 = await queries();
+  check('Saved copy expires after the configured time (chat is queried again)', q1 - q0 === 5, `queries +${q1 - q0}`);
+
+  // 11b. Switching back to a saved chat: instant, no placeholders, no C4C query
+  await open('Mei Ling Tan');
+  await view.locator('.cust-name', { hasText: 'Mei Ling Tan' }).waitFor({ timeout: 5000 });
+  await settled();
+  const q2 = await queries();
+  await open('Jenna Hopkins');
+  await view.locator('.cust-name', { hasText: 'Jenna Hopkins' }).waitFor({ timeout: 3000 });
+  const placeholders = await view.locator('.skel').count();
+  await page.waitForTimeout(600);
+  const q3 = await queries();
+  const cacheState = await cacheTxt();
+  check('Switching back to a saved chat shows it at once, no loading placeholders', placeholders === 0, `placeholders=${placeholders}`);
+  check('Switching back to a saved chat makes no C4C query', q3 === q2, `queries ${q2} -> ${q3}`);
+  check('View reports a saved-copy hit', /cache: hit/.test(cacheState), cacheState);
+  await page.screenshot({ path: path.join(OUT, '7-saved-copy.png') });
+
+  // 11c. A section that failed is never saved: only that section is asked again
+  await open('Ali Hassan');
+  await view.locator('.cust-name', { hasText: 'Ali Hassan' }).waitFor({ timeout: 5000 });
+  await settled();
+  await view.locator('[data-section="order"] .state.error').waitFor({ timeout: 3000 });
+  await open('Mei Ling Tan');
+  await view.locator('.cust-name', { hasText: 'Mei Ling Tan' }).waitFor({ timeout: 3000 });
+  await settled();
+  const q4 = await queries();
+  await open('Ali Hassan');
+  await view.locator('.cust-name', { hasText: 'Ali Hassan' }).waitFor({ timeout: 3000 });
+  await view.locator('[data-section="order"] .skel').first().waitFor({ state: 'attached', timeout: 3000 });
+  await settled();
+  await view.locator('[data-section="order"] .state.error').waitFor({ timeout: 3000 });
+  const q5 = await queries();
+  const ali = await cacheTxt();
+  check('Failed section is not saved: only that one is re-queried', q5 - q4 === 1, `queries +${q5 - q4}`);
+  check('Partly saved chat is reported as a partial hit', /cache: partial/.test(ali), ali);
+
+  // 11d. Refresh throws the saved copy away and loads everything again
+  await open('Jenna Hopkins');
+  await view.locator('.cust-name', { hasText: 'Jenna Hopkins' }).waitFor({ timeout: 5000 });
+  await settled();
+  const q6 = await queries();
+  const refreshBtn = view.locator('#refresh');
+  check('Refresh button is available once the chat has loaded', await refreshBtn.isEnabled());
+  await refreshBtn.click();
+  await view.locator('#age', { hasText: 'Updating' }).waitFor({ timeout: 3000 });
+  check('Refresh button is disabled while updating', await refreshBtn.isDisabled());
+  await view.locator('#age', { hasText: 'Updated just now' }).waitFor({ timeout: 12000 });
+  await settled();
+  const q7 = await queries();
+  check('Refresh queries C4C again for every section', q7 - q6 === 5, `queries +${q7 - q6}`);
+  check('Refresh button comes back after the update', await refreshBtn.isEnabled());
+  await page.screenshot({ path: path.join(OUT, '8-refreshed.png') });
+
+  // 11e. Option B: saved copy works there too, and Refresh asks for a new token
+  await nb.locator('#mode').selectOption('pull');
+  await view.locator('#diagMode', { hasText: 'B (token)' }).waitFor({ timeout: 5000 });
+  await freshLoad();
+  await open('Mei Ling Tan');
+  await view.locator('.cust-name', { hasText: 'Mei Ling Tan' }).waitFor({ timeout: 6000 });
+  await settled();
+  const a0 = apiCalls;
+  await open('Jenna Hopkins');
+  await view.locator('.cust-name', { hasText: 'Jenna Hopkins' }).waitFor({ timeout: 3000 });
+  const placeholdersB = await view.locator('.skel').count();
+  await page.waitForTimeout(600);
+  check('Option B: switching back makes no data calls and shows no placeholders', apiCalls === a0 && placeholdersB === 0, `api calls +${apiCalls - a0}, placeholders=${placeholdersB}`);
+  await view.locator('#refresh').click();
+  await view.locator('#age', { hasText: 'Updating' }).waitFor({ timeout: 3000 });
+  await view.locator('#age', { hasText: 'Updated just now' }).waitFor({ timeout: 12000 });
+  await settled();
+  check('Option B: Refresh loads everything again with a new token', apiCalls - a0 >= 5, `api calls +${apiCalls - a0}`);
+
+  // 12. Mashup rebuilt on navigation drops Nubitel (reload counter)
   await page.locator('input[name="persist"][value="rerender"]').check();
   await page.locator('.nav button', { hasText: 'Accounts' }).click();
   await page.locator('#log li.fail', { hasText: 'reloaded' }).waitFor({ timeout: 5000 });

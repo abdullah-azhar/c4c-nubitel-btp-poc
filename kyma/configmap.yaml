@@ -14,3 +14,5 @@ data:
   # Keep mock until the C4C queries are confirmed. Never real customer data on a trial account.
   DATA_SOURCE: "mock"
   SECTION_TIMEOUT_MS: "6000"
+  # How long (seconds) the view reuses what it loaded when the agent switches back to a chat. 0 = off.
+  CACHE_TTL_SECONDS: "300"

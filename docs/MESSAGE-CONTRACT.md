@@ -41,6 +41,7 @@ Sent every time the agent opens or switches to a conversation.
 | `channel` | `"whatsapp"` \| `"voice"` | |
 | `mode` | `"push"` \| `"pull"` | `push` = Option A, `pull` = Option B |
 | `token` | string | Option B only. Short-lived signed token, see below. |
+| `refresh` | boolean | Optional. `true` after the agent pressed Refresh: the view throws away what it saved for this chat and everything is loaded again. |
 
 ### `section.update` (Option A only)
 One message per section, sent as soon as that section's C4C call returns.
@@ -78,11 +79,49 @@ Optional. Clears the view when a conversation is wrapped up.
 | `type` | When | Fields |
 |---|---|---|
 | `view.ready` | View has loaded. Nubitel should (re)send `conversation.open` for the current chat. | — |
+| `view.cache` | Right after every `conversation.open`. Says which parts of this chat the view already holds. | `conversationId`, `have` (sections), `missing` (sections), `accountId` (when the customer is held, else `null`), `ageMs` (or `null`) |
+| `view.refresh` | Agent pressed Refresh. Answer with `conversation.open` with `refresh: true` (and a new token in Option B). | `conversationId` |
 | `view.retry` | Agent clicked Retry on a section (Option A). Re-run that one C4C call. | `conversationId`, `section` |
 | `view.action` | Agent clicked "Open in C4C". For logging only; the view opens the link itself. | `action`, `conversationId`, `accountId` |
 
 Nubitel must check `event.origin === <BTP view origin>` and
 `event.source === iframe.contentWindow` before acting on any of these.
+
+## Saved copy and Refresh
+
+The view remembers what it loaded for each chat, so when the agent switches back
+to a chat it appears at once and C4C is not asked again.
+
+* **Where:** the page's memory only. Nothing goes to localStorage, cookies or a
+  server. It disappears when the page is closed or reloaded.
+* **How long:** `CACHE_TTL_SECONDS` on the view (default 300 = 5 minutes, `0`
+  turns it off). The last 20 chats are kept. `conversation.close` forgets that chat.
+* **What is saved:** a section that loaded (`ok` or `empty`) and the customer
+  result (`ok`, `not_found` or `multiple`). **Errors are never saved**, so a
+  failed section is asked again the next time.
+* **Refresh button:** forgets the saved copy of that chat and loads it all again.
+  A label next to it shows how old the data is ("Updated 3 min ago").
+
+What Nubitel must do (Option A, where Nubitel calls C4C):
+
+1. Send `conversation.open` as before.
+2. Wait for the view's `view.cache` reply, at most about 300 ms. No reply means
+   an older view: treat everything as missing.
+3. Ask C4C only for the sections listed in `missing`.
+   * If `missing` contains `customer`: look the customer up by phone number,
+     send `customer`, then the other sections (as in the normal flow).
+   * If `customer` is in `have`: use `accountId` from the reply and call only the
+     missing sections. `missing` is empty when nothing is needed.
+4. On `view.refresh`, send `conversation.open` again with `refresh: true`. The
+   reply will list every section as missing.
+
+Option B (signed token): send `conversation.open` with a token as before. The view
+uses its saved copy and only calls its own `/api` for the missing sections. On
+`view.refresh`, send `conversation.open` with `refresh: true` and a **new** token
+(the old one lives only 60 seconds).
+
+The saved copy keeps customer data in the browser for up to the TTL. If security
+requires no data at rest in the page, set `CACHE_TTL_SECONDS=0`.
 
 ## Option B token
 

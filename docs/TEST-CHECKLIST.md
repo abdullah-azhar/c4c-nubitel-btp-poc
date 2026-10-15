@@ -20,6 +20,10 @@ Record: Pass / Fail / Notes.
 | L9 | Forged or missing token to `/api` | 401. | |
 | L10 | Open http://127.0.0.1:8081 (not an approved host) | Nubitel area stays blank: framing refused by CSP. | |
 | L11 | Choose "rebuilt (reloads Nubitel)", click Accounts | Diagnostics flags "Nubitel reloaded … calls and chats would drop". | |
+| L12 | Open Jenna, open Mei, switch back to Jenna | Jenna appears at once with no grey placeholders; "C4C queries" does not go up; footer shows "cache: hit". | |
+| L13 | Open Ali, switch away and back | Only "Last order" is asked again (queries +1); footer shows "cache: partial". | |
+| L14 | Press **Refresh** | Label shows "Updating…" then "Updated just now"; queries go up by 5. | |
+| L15 | Wait past `CACHE_TTL_SECONDS`, switch back | The chat is loaded from C4C again. | |
 
 ## Stage 2: real C4C tenant (the decisive tests)
 

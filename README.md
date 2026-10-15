@@ -62,9 +62,19 @@ Also try **Rapid switch test**, the **Security option** dropdown, the
 
 ```bash
 npm i -D playwright && npx playwright install chromium
-npm start            # in one terminal
-npm test             # in another: 16 checks, screenshots in local/screens/
+CACHE_TTL_SECONDS=12 npm start   # in one terminal (short saved-copy life so expiry can be tested)
+npm test                         # in another: 28 checks, screenshots in local/screens/
 ```
+
+On Windows PowerShell set the variable first: `$env:CACHE_TTL_SECONDS = '12'`.
+
+### Saved copy and Refresh
+
+The view keeps what it loaded per chat in page memory, so switching back to a
+chat shows it at once without asking C4C again. **Refresh** (next to "Open in C4C")
+reloads the chat. The mock Nubitel's "C4C queries" counter shows the saving.
+Lifetime: `CACHE_TTL_SECONDS` (default 300, `0` = off). Details:
+`docs/MESSAGE-CONTRACT.md`.
 
 Note: ports on `localhost` are different *origins* but the same *site*, so the
 session-cookie check always passes locally. Run it on real domains.

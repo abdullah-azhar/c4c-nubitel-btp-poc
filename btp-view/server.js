@@ -16,6 +16,8 @@
  *   C4C_UI_URL                C4C tenant URL, for "Open in C4C" deep links
  *   C4C_DEEPLINK_TEMPLATE     optional override; {base} {accountId}
  *   SECTION_TIMEOUT_MS        default 6000
+ *   CACHE_TTL_SECONDS         how long a chat's loaded data is reused when the agent
+ *                             switches back (default 300, 0 = off)
  *   DATA_SOURCE, C4C_*        see lib/c4c-adapter.js
  */
 const http = require('http');
@@ -35,6 +37,10 @@ function start(env = process.env) {
   const DEEPLINK = env.C4C_DEEPLINK_TEMPLATE ||
     '{base}/sap/public/byd/runtime?bo_ns=http://sap.com/thingTypes&bo=COD_GENERIC&node=Root&operation=OnExtInspect&param.Type=COD_ACCOUNT_TT&param.InternalID={accountId}&sapbyd-agent=TAB';
   const adapter = createAdapter(env);
+  // How long the page may reuse what it already loaded when the agent switches back to a chat.
+  // Seconds; 0 turns the saved copy off. In page memory only, never stored.
+  const ttlSeconds = env.CACHE_TTL_SECONDS === undefined || env.CACHE_TTL_SECONDS === '' ? 300 : Number(env.CACHE_TTL_SECONDS);
+  const CACHE_TTL_MS = Number.isFinite(ttlSeconds) && ttlSeconds >= 0 ? Math.round(ttlSeconds * 1000) : 300000;
 
   if (SECRET === 'poc-only-change-me') console.warn('[btp-view] TOKEN_SECRET not set: using POC default. Never use this outside local testing.');
 
@@ -79,6 +85,7 @@ function start(env = process.env) {
           messageOrigins: MESSAGE_ORIGINS,
           deepLinkTemplate: DEEPLINK.replace('{base}', C4C_UI_URL),
           sectionTimeoutMs: Number(env.SECTION_TIMEOUT_MS || 6000),
+          cacheTtlMs: CACHE_TTL_MS,
           sections: SECTIONS,
         };
         res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store', ...securityHeaders });

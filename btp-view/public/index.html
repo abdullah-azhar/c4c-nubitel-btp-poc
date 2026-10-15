@@ -20,7 +20,11 @@
         <div class="customer-main">
           <div class="slot"></div>
         </div>
-        <a id="openC4C" class="btn" target="_blank" rel="noopener noreferrer" hidden>Open in C4C</a>
+        <div class="actions">
+          <a id="openC4C" class="btn" target="_blank" rel="noopener noreferrer" hidden>Open in C4C</a>
+          <button id="refresh" class="btn ghost" type="button" title="Reload this customer from C4C" aria-label="Refresh customer data from C4C" disabled><span aria-hidden="true">&#8635;</span> Refresh</button>
+          <span id="age" class="age" aria-live="off"></span>
+        </div>
       </header>
 
       <div class="tiles">
@@ -39,6 +43,7 @@
   <footer id="diag" class="diag">
     <span id="diagMode">mode: -</span>
     <span id="diagTimes"></span>
+    <span id="diagCache">cache: -</span>
     <span id="diagDropped">stale dropped: 0</span>
   </footer>
 

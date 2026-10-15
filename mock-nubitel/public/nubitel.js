@@ -20,6 +20,17 @@
   ];
 
   // ---------- messaging with the BTP view ----------
+  const cacheWaiters = new Map(); // conversationId -> resolve(view.cache message)
+  const callsEl = document.getElementById('calls');
+  let c4cCalls = 0;               // how many C4C lookups this page has made (Option A)
+
+  function waitForCache(cid, ms) {
+    return new Promise((resolve) => {
+      const t = setTimeout(() => { cacheWaiters.delete(cid); resolve(null); }, ms);
+      cacheWaiters.set(cid, (info) => { clearTimeout(t); cacheWaiters.delete(cid); resolve(info); });
+    });
+  }
+
   frame.src = CFG.viewUrl;
   const send = (msg) => frame.contentWindow.postMessage(Object.assign({ v: 1 }, msg), CFG.viewOrigin);
 
@@ -27,6 +38,10 @@
     if (e.source !== frame.contentWindow || e.origin !== CFG.viewOrigin) return;
     const m = e.data || {};
     if (m.type === 'view.ready') { viewReady = true; if (currentConv) openConversation(currentConv); }
+    // The view says which parts of this chat it already holds, so we only ask C4C for the rest.
+    if (m.type === 'view.cache') { const w = cacheWaiters.get(m.conversationId); if (w) w(m); }
+    // Agent pressed Refresh in the view: forget what it holds and load everything again.
+    if (m.type === 'view.refresh' && m.conversationId === currentCid) openConversation(currentConv, { refresh: true });
     if (m.type === 'view.retry' && m.conversationId === currentCid) loadSection(m.section, currentCid);
     if (m.type === 'view.action') report('view', `Agent clicked ${m.action} (${m.accountId})`, true);
   });
@@ -57,34 +72,48 @@
   }
 
   // ---------- opening a conversation ----------
-  async function openConversation(c) {
+  // opts.refresh = true: the agent asked for fresh data, so the view must ignore what it saved.
+  async function openConversation(c, opts = {}) {
     currentConv = c;
     currentCid = c.id;
     renderChat(c);
     if (!viewReady) return; // view will announce view.ready, then we resend
     const cid = c.id;
     const mode = modeSel.value;
+    const refresh = opts.refresh === true;
 
     if (mode === 'pull') {
       // Option B: ask our backend for a short-lived token, hand it to the view.
+      // The view reuses its saved copy when it has one; the token covers whatever is missing.
       const r = await fetch('/nubitel-api/token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cid, phone: c.phone, agent: 'james.theng' }) });
       const { token } = await r.json();
       if (currentCid !== cid) return;
-      send({ type: 'conversation.open', conversationId: cid, channel: c.channel, mode: 'pull', token });
+      send({ type: 'conversation.open', conversationId: cid, channel: c.channel, mode: 'pull', token, refresh });
       return;
     }
 
     // Option A: we call C4C (through our backend) and push each section as it arrives.
-    send({ type: 'conversation.open', conversationId: cid, channel: c.channel, mode: 'push' });
-    const cust = await getJSON(`/nubitel-api/lookup?section=customer&phone=${encodeURIComponent(c.phone)}`);
-    send({ type: 'section.update', conversationId: cid, section: 'customer', status: cust.status, data: cust.data });
-    if (cust.status !== 'ok') return;
-    accountByCid[cid] = cust.data.accountId;
-    CFG.sections.forEach((s) => loadSection(s, cid));
+    // First ask the view what it already holds (it answers with view.cache); a view that
+    // does not answer within 300 ms is treated as holding nothing.
+    const reply = waitForCache(cid, 300);
+    send({ type: 'conversation.open', conversationId: cid, channel: c.channel, mode: 'push', refresh });
+    const info = await reply;
+    const missing = info ? info.missing : ['customer'].concat(CFG.sections);
+    if (info && info.accountId) accountByCid[cid] = info.accountId;
+
+    if (missing.includes('customer')) {
+      const cust = await getJSON(`/nubitel-api/lookup?section=customer&phone=${encodeURIComponent(c.phone)}`);
+      send({ type: 'section.update', conversationId: cid, section: 'customer', status: cust.status, data: cust.data });
+      if (cust.status !== 'ok') return;
+      accountByCid[cid] = cust.data.accountId;
+      CFG.sections.forEach((s) => loadSection(s, cid));
+    } else {
+      missing.forEach((s) => loadSection(s, cid)); // only the parts the view does not hold
+    }
   }
 
   async function loadSection(section, cid) {
-    if (section === 'customer') return openConversation(currentConv);
+    if (section === 'customer') return openConversation(currentConv, { refresh: true });
     const accountId = accountByCid[cid];
     if (!accountId) return;
     const r = await getJSON(`/nubitel-api/lookup?section=${section}&accountId=${encodeURIComponent(accountId)}`);
@@ -93,14 +122,17 @@
   }
 
   async function getJSON(u) {
+    if (u.startsWith('/nubitel-api/lookup')) { c4cCalls++; if (callsEl) callsEl.textContent = `C4C queries: ${c4cCalls}`; }
     try { const r = await fetch(u, { cache: 'no-store' }); return await r.json(); } catch (e) { return { status: 'error' }; }
   }
 
-  modeSel.addEventListener('change', () => { if (currentConv) openConversation(currentConv); });
+  // Changing the security option changes the data path, so load fresh through the new one.
+  modeSel.addEventListener('change', () => { if (currentConv) openConversation(currentConv, { refresh: true }); });
 
+  // The rapid-switch test checks that late answers are dropped, so it must always load fresh.
   document.getElementById('rapid').addEventListener('click', async () => {
     const order = [CONVS[1], CONVS[0], CONVS[3], CONVS[4], CONVS[0]];
-    for (const c of order) { openConversation(c); await new Promise((r) => setTimeout(r, 250)); }
+    for (const c of order) { openConversation(c, { refresh: true }); await new Promise((r) => setTimeout(r, 250)); }
     report('rapid', 'Rapid switch done: view should show Jenna Hopkins only', true);
   });
 
