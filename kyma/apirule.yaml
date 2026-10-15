@@ -1,7 +1,11 @@
 # Exposes the view on the Kyma cluster's own domain:
 #   https://c4c-lean-view.<cluster-domain>/
-# noAuth is intended: the page itself is public (it holds no data), and the data
-# API checks the signed token (Option B). Only GET/HEAD are allowed through.
+# noAuth is intended at the gateway: Nubitel's iframe cannot carry a login, so the app
+# protects itself. The page is only handed out when loaded as a frame (locked screen
+# otherwise), and every data call needs the signed token (security option B).
+#
+# Only GET/HEAD are allowed through, plus POST on exactly /api/contact: the unknown-caller
+# screen saves a number on a contact there (the app still refuses it unless ALLOW_WRITES=true).
 #
 # Uses the gateway.kyma-project.io/v2 API. If your cluster only has an older
 # version, check: kubectl get crd apirules.gateway.kyma-project.io -o jsonpath='{.spec.versions[*].name}'
@@ -19,4 +23,7 @@ spec:
   rules:
     - path: /{**}
       methods: ["GET", "HEAD"]
+      noAuth: true
+    - path: /api/contact
+      methods: ["POST"]
       noAuth: true
