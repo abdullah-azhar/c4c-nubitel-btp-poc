@@ -94,11 +94,18 @@ kubectl get gateways.networking.istio.io kyma-gateway -n kyma-system -o jsonpath
 # prints *.<id>.kyma.ondemand.com  ->  your view is https://c4c-lean-view.<id>.kyma.ondemand.com/
 kubectl get apirule c4c-lean-view -n c4c-poc      # STATE should be Ready
 curl.exe -s https://c4c-lean-view.<id>.kyma.ondemand.com/health
-curl.exe -sI https://c4c-lean-view.<id>.kyma.ondemand.com/ | findstr /i "content-security-policy"
+curl.exe -sI -H "Sec-Fetch-Dest: iframe" https://c4c-lean-view.<id>.kyma.ondemand.com/ | findstr /i "content-security-policy"
 ```
 
 `/health` should return `{"ok":true,"source":"mock"}`, and the CSP header must
 list the Vercel address and your C4C tenant under `frame-ancestors`.
+
+The view link is **not public**: opened directly in a browser the page itself answers
+`403` with a locked screen. Only a frame load (inside Nubitel) gets the app, and data
+only comes back for a valid token. `curl -sI .../` therefore returns 403, which is
+expected; use `/health` for probes. If agents use a very old browser that sends no
+`Sec-Fetch-Dest` header, they would see the locked screen; `ALLOW_DIRECT_OPEN: "true"`
+in the ConfigMap switches the check off (debugging only).
 
 ## 6. Connect it to the mock Nubitel and C4C
 

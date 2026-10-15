@@ -14,7 +14,9 @@ It answers the questions that decide whether the design works:
    customer first instead of waiting for the whole panel?
 3. Is the data safe: right customer only, no data in URLs, stale data dropped,
    no messages accepted from the wrong place?
-4. Option A (Nubitel calls C4C) vs Option B (signed token, BTP calls C4C): both work here.
+4. Security option B only: Nubitel passes a signed token (phone number and the phone
+   call activity's external ID) and the BTP view calls C4C itself. The view link is
+   not public: opened directly it shows a locked screen.
 5. Inside C4C: do the microphone, clipboard and Nubitel's login cookie still work,
    and does Nubitel survive C4C navigation?
 
@@ -25,9 +27,9 @@ C4C tenant (see `docs/TEST-CHECKLIST.md`, Stage 2).
 
 | Folder | What it is | Goes to production? |
 |---|---|---|
-| `btp-view/` | The BTP lean view: page + small Node server (security headers, Option B API) | Yes, this is the build |
-| `lib/` | Phone normalisation, signed tokens, C4C adapter (mock + real OData) | Yes |
-| `mock-nubitel/` | Stand-in for Nubitel: conversation list, Option A/B, browser checks | No, reference for Nubitel |
+| `btp-view/` | The BTP lean view: page + small Node server (locked screen, security headers, token API) | Yes, this is the build |
+| `lib/` | Phone normalisation, signed tokens, C4C adapter (mock now; real OData mapping from `$metadata`) | Yes |
+| `mock-nubitel/` | Stand-in for Nubitel: conversation list, token signing, browser checks | No, reference for Nubitel |
 | `mock-c4c-host/` | Simulated C4C shell with switchable mashup settings | No, local testing only |
 | `docs/MESSAGE-CONTRACT.md` | What Nubitel must send and receive | Hand to Nubitel |
 | `docs/TEST-CHECKLIST.md` | Local and real-tenant test cases | Test team |
@@ -48,25 +50,34 @@ Try the conversations on the left; each one exercises a case:
 
 | Conversation | Shows |
 |---|---|
-| Jenna Hopkins | Happy path, sections loading one by one |
+| Jenna Hopkins | Happy path, found through the phone call activity's external ID |
 | Kumar Singh | Slow sections |
-| June Wong | Two contacts share the number |
-| Ali Hassan | One section fails, the rest still load |
-| Mei Ling Tan | Empty quote and tickets |
-| +60 11-5555 0000 | Number not in C4C |
+| June Wong | Two contacts share the number: the agent picks one |
+| Ali Hassan | Last sales order fails, the rest still load |
+| Mei Ling Tan | No sales order, no tasks |
+| +60 11-5555 0000, +60 18-222 9999 | Unknown caller: add to an existing contact, or create a new one (popups) |
 
-Also try **Rapid switch test**, the **Security option** dropdown, the
-**Browser checks** buttons, and the mashup settings at the top of the C4C host.
+Also try the **refresh icon** (top right of the view), **Rapid switch test**,
+**Token expiry test**, the **Browser checks** buttons, and the mashup settings at the
+top of the C4C host. Open http://localhost:8083 directly: it shows a locked screen.
 
 ### Automated test
 
 ```bash
 npm i -D playwright && npx playwright install chromium
 CACHE_TTL_SECONDS=12 npm start   # in one terminal (short saved-copy life so expiry can be tested)
-npm test                         # in another: 28 checks, screenshots in local/screens/
+npm test                         # in another: 49 checks, screenshots in local/screens/
 ```
 
 On Windows PowerShell set the variable first: `$env:CACHE_TTL_SECONDS = '12'`.
+
+### What the agent sees
+
+A compact panel for a narrow side pane: refresh icon top right; customer with open-in-C4C
+icons (contact, account); **last sales order**; **open tasks** (due dates, overdue in red);
+**recommended products of the current month** in a table that scrolls inside its own
+section. An unknown number gets its own screen with two choices, each opening a popup.
+Data is mock until the OData mapping is filled in: see `docs/C4C-ODATA.md`.
 
 ### Saved copy and Refresh
 

@@ -13,13 +13,7 @@
     <strong>Mock Nubitel</strong>
     <span class="muted">stands in for the Nubitel agent app</span>
     <span class="spacer"></span>
-    <span id="calls" class="calls" title="How many times this page asked C4C (Option A). Switching back to a saved chat adds none.">C4C queries: 0</span>
-    <label>Security option
-      <select id="mode">
-        <option value="push">A · Nubitel calls C4C</option>
-        <option value="pull">B · Signed token, BTP calls C4C</option>
-      </select>
-    </label>
+    <button id="expiry" type="button" title="Send an already-expired token: the view should ask for a new one and still load">Token expiry test</button>
     <button id="rapid" type="button" title="Switch between chats quickly to test that late data is dropped">Rapid switch test</button>
   </header>
 

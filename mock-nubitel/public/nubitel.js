@@ -1,49 +1,58 @@
 /* Mock Nubitel page logic. This is also the reference for what the real Nubitel
- * app needs to do: see docs/MESSAGE-CONTRACT.md. */
+ * app needs to do: see docs/MESSAGE-CONTRACT.md.
+ *
+ * Nubitel only has to do three things:
+ *   1. when the agent opens a conversation, ask its backend for a signed token
+ *      (phone number + external ID of the phone call activity) and post
+ *      conversation.open { conversationId, token } to the view
+ *   2. answer view.refresh with conversation.open { refresh: true } and a new token
+ *   3. answer view.needToken with token.update { conversationId, token }
+ * The view then calls C4C through BTP itself. */
 (function () {
   'use strict';
   const CFG = window.NB_CONFIG;
   const frame = document.getElementById('view');
-  const modeSel = document.getElementById('mode');
   let viewReady = false;
   let currentCid = null;
   let currentConv = null;
-  let accountByCid = {};
 
+  // externalId = the external ID Nubitel stored on the C4C phone call activity for this conversation
   const CONVS = [
-    { id: 'conv-2294', name: 'Jenna Hopkins', phone: '+60 8347 2856', channel: 'whatsapp', note: 'Happy path', msgs: [['c', 'Hi, can I reorder Vitamin C 1000mg? Same as last month.']] },
-    { id: 'conv-3492', name: 'Kumar Singh', phone: '012-345 6789', channel: 'voice', note: 'Slow sections', msgs: [['c', '(voice call in progress)']] },
-    { id: 'conv-3243', name: 'June Wong', phone: '+60 16-222 3333', channel: 'whatsapp', note: 'Two matching contacts', msgs: [['c', 'Hello, checking on my order.']] },
-    { id: 'conv-5120', name: 'Ali Hassan', phone: '019-876 5432', channel: 'whatsapp', note: 'Orders fail to load', msgs: [['c', 'Is my delivery coming today?']] },
-    { id: 'conv-5333', name: 'Mei Ling Tan', phone: '017-777 8888', channel: 'whatsapp', note: 'No quote, no tickets', msgs: [['c', 'Do you have Zinc 25mg in stock?']] },
-    { id: 'conv-6001', name: '+60 11-5555 0000', phone: '011-5555 0000', channel: 'whatsapp', note: 'Number not in C4C', msgs: [['c', 'Hi, I would like to order.']] },
+    { id: 'conv-2294', externalId: 'NUB-CALL-100234', name: 'Jenna Hopkins', phone: '+60 8347 2856', channel: 'whatsapp', note: 'Happy path (found by activity)', msgs: [['c', 'Hi, can I reorder Vitamin C 1000mg? Same as last month.']] },
+    { id: 'conv-3492', externalId: 'NUB-CALL-100235', name: 'Kumar Singh', phone: '012-345 6789', channel: 'voice', note: 'Slow sections', msgs: [['c', '(voice call in progress)']] },
+    { id: 'conv-3243', externalId: 'NUB-CALL-100237', name: 'June Wong', phone: '+60 16-222 3333', channel: 'whatsapp', note: 'Two matching contacts', msgs: [['c', 'Hello, checking on my order.']] },
+    { id: 'conv-5120', externalId: 'NUB-CALL-100236', name: 'Ali Hassan', phone: '019-876 5432', channel: 'whatsapp', note: 'Order fails to load', msgs: [['c', 'Is my delivery coming today?']] },
+    { id: 'conv-5333', externalId: 'NUB-CALL-100238', name: 'Mei Ling Tan', phone: '017-777 8888', channel: 'whatsapp', note: 'No order, no tasks', msgs: [['c', 'Do you have Zinc 25mg in stock?']] },
+    { id: 'conv-6001', externalId: 'NUB-CALL-100239', name: '+60 11-5555 0000', phone: '011-5555 0000', channel: 'whatsapp', note: 'Unknown caller', msgs: [['c', 'Hi, I would like to order.']] },
+    { id: 'conv-6002', externalId: 'NUB-CALL-100240', name: '+60 18-222 9999', phone: '018-222 9999', channel: 'voice', note: 'Unknown caller (2)', msgs: [['c', '(voice call in progress)']] },
   ];
 
   // ---------- messaging with the BTP view ----------
-  const cacheWaiters = new Map(); // conversationId -> resolve(view.cache message)
-  const callsEl = document.getElementById('calls');
-  let c4cCalls = 0;               // how many C4C lookups this page has made (Option A)
-
-  function waitForCache(cid, ms) {
-    return new Promise((resolve) => {
-      const t = setTimeout(() => { cacheWaiters.delete(cid); resolve(null); }, ms);
-      cacheWaiters.set(cid, (info) => { clearTimeout(t); cacheWaiters.delete(cid); resolve(info); });
-    });
-  }
-
   frame.src = CFG.viewUrl;
   const send = (msg) => frame.contentWindow.postMessage(Object.assign({ v: 1 }, msg), CFG.viewOrigin);
+
+  // The backend signs; the browser never sees the secret. ttl below 60 is only for the expiry test.
+  async function mintToken(c, ttl) {
+    const r = await fetch('/nubitel-api/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cid: c.id, phone: c.phone, externalId: c.externalId, agent: 'james.theng', ttl }),
+    });
+    return (await r.json()).token;
+  }
 
   window.addEventListener('message', (e) => {
     if (e.source !== frame.contentWindow || e.origin !== CFG.viewOrigin) return;
     const m = e.data || {};
     if (m.type === 'view.ready') { viewReady = true; if (currentConv) openConversation(currentConv); }
-    // The view says which parts of this chat it already holds, so we only ask C4C for the rest.
-    if (m.type === 'view.cache') { const w = cacheWaiters.get(m.conversationId); if (w) w(m); }
-    // Agent pressed Refresh in the view: forget what it holds and load everything again.
+    // Agent pressed Refresh: open again, ignoring what the view saved, with a new token
     if (m.type === 'view.refresh' && m.conversationId === currentCid) openConversation(currentConv, { refresh: true });
-    if (m.type === 'view.retry' && m.conversationId === currentCid) loadSection(m.section, currentCid);
-    if (m.type === 'view.action') report('view', `Agent clicked ${m.action} (${m.accountId})`, true);
+    // The token lives 60 seconds; the view asks for a new one instead of failing
+    if (m.type === 'view.needToken' && m.conversationId === currentCid) {
+      const c = currentConv;
+      mintToken(c).then((token) => { if (currentCid === c.id) send({ type: 'token.update', conversationId: c.id, token }); });
+    }
+    if (m.type === 'view.contactSaved') report('view', `Contact ${m.mode === 'create' ? 'created' : 'updated'}: ${m.contactId}`, true);
+    if (m.type === 'view.action') report('view', `Agent opened ${m.object} ${m.id} in C4C`, true);
   });
 
   // ---------- conversation list ----------
@@ -72,68 +81,31 @@
   }
 
   // ---------- opening a conversation ----------
-  // opts.refresh = true: the agent asked for fresh data, so the view must ignore what it saved.
+  // opts.refresh = true: the agent asked for fresh data, so the view ignores what it saved.
+  // opts.delayMs / opts.ttl: only for the token-expiry test (send an already-expired token).
   async function openConversation(c, opts = {}) {
     currentConv = c;
     currentCid = c.id;
     renderChat(c);
     if (!viewReady) return; // view will announce view.ready, then we resend
-    const cid = c.id;
-    const mode = modeSel.value;
-    const refresh = opts.refresh === true;
-
-    if (mode === 'pull') {
-      // Option B: ask our backend for a short-lived token, hand it to the view.
-      // The view reuses its saved copy when it has one; the token covers whatever is missing.
-      const r = await fetch('/nubitel-api/token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cid, phone: c.phone, agent: 'james.theng' }) });
-      const { token } = await r.json();
-      if (currentCid !== cid) return;
-      send({ type: 'conversation.open', conversationId: cid, channel: c.channel, mode: 'pull', token, refresh });
-      return;
-    }
-
-    // Option A: we call C4C (through our backend) and push each section as it arrives.
-    // First ask the view what it already holds (it answers with view.cache); a view that
-    // does not answer within 300 ms is treated as holding nothing.
-    const reply = waitForCache(cid, 300);
-    send({ type: 'conversation.open', conversationId: cid, channel: c.channel, mode: 'push', refresh });
-    const info = await reply;
-    const missing = info ? info.missing : ['customer'].concat(CFG.sections);
-    if (info && info.accountId) accountByCid[cid] = info.accountId;
-
-    if (missing.includes('customer')) {
-      const cust = await getJSON(`/nubitel-api/lookup?section=customer&phone=${encodeURIComponent(c.phone)}`);
-      send({ type: 'section.update', conversationId: cid, section: 'customer', status: cust.status, data: cust.data });
-      if (cust.status !== 'ok') return;
-      accountByCid[cid] = cust.data.accountId;
-      CFG.sections.forEach((s) => loadSection(s, cid));
-    } else {
-      missing.forEach((s) => loadSection(s, cid)); // only the parts the view does not hold
-    }
+    const token = await mintToken(c, opts.ttl);
+    if (opts.delayMs) await new Promise((r) => setTimeout(r, opts.delayMs));
+    if (currentCid !== c.id) return;
+    send({ type: 'conversation.open', conversationId: c.id, channel: c.channel, token, refresh: opts.refresh === true });
   }
-
-  async function loadSection(section, cid) {
-    if (section === 'customer') return openConversation(currentConv, { refresh: true });
-    const accountId = accountByCid[cid];
-    if (!accountId) return;
-    const r = await getJSON(`/nubitel-api/lookup?section=${section}&accountId=${encodeURIComponent(accountId)}`);
-    // Always tag with the conversation it belongs to; the view drops it if the agent has moved on.
-    send({ type: 'section.update', conversationId: cid, section, status: r.status, data: r.data });
-  }
-
-  async function getJSON(u) {
-    if (u.startsWith('/nubitel-api/lookup')) { c4cCalls++; if (callsEl) callsEl.textContent = `C4C queries: ${c4cCalls}`; }
-    try { const r = await fetch(u, { cache: 'no-store' }); return await r.json(); } catch (e) { return { status: 'error' }; }
-  }
-
-  // Changing the security option changes the data path, so load fresh through the new one.
-  modeSel.addEventListener('change', () => { if (currentConv) openConversation(currentConv, { refresh: true }); });
 
   // The rapid-switch test checks that late answers are dropped, so it must always load fresh.
   document.getElementById('rapid').addEventListener('click', async () => {
     const order = [CONVS[1], CONVS[0], CONVS[3], CONVS[4], CONVS[0]];
     for (const c of order) { openConversation(c, { refresh: true }); await new Promise((r) => setTimeout(r, 250)); }
     report('rapid', 'Rapid switch done: view should show Jenna Hopkins only', true);
+  });
+
+  // Sends a token that has already expired, to prove the view asks for a new one and still loads.
+  document.getElementById('expiry').addEventListener('click', () => {
+    if (!currentConv) { report('expiry', 'Open a conversation first', false); return; }
+    openConversation(currentConv, { refresh: true, ttl: 1, delayMs: 2200 });
+    report('expiry', 'Sent an expired token: the view should still load after asking for a new one', true);
   });
 
   // ---------- browser checks (results also go to the C4C host page) ----------

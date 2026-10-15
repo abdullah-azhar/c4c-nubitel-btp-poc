@@ -23,6 +23,7 @@ applications:
       C4C_USER: <read-only-technical-user>
       SECTION_TIMEOUT_MS: 6000
       CACHE_TTL_SECONDS: 300       # reuse loaded data when switching back to a chat; 0 = off
+      ALLOW_WRITES: false          # true lets agents create/update contacts (unknown-caller screen)
 
   # Optional: host the mock Nubitel too, so you can add it to your real C4C
   # tenant as a mashup and test the nesting before Nubitel's build is ready.

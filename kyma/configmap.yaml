@@ -16,3 +16,16 @@ data:
   SECTION_TIMEOUT_MS: "6000"
   # How long (seconds) the view reuses what it loaded when the agent switches back to a chat. 0 = off.
   CACHE_TTL_SECONDS: "300"
+  # C4C tenant for the OData adapter (used only when DATA_SOURCE is "c4c"). Credentials are NOT here:
+  # they go in the secret c4c-odata-credentials, see docs/C4C-ODATA.md.
+  C4C_BASE_URL: "https://my335945.crm.ondemand.com"
+  # Lets agents create a contact or save the caller's number on a contact (unknown-caller screen).
+  # Mock data only for now. Review this before switching DATA_SOURCE to "c4c".
+  ALLOW_WRITES: "true"
+  # Thing type used for each open-in-C4C icon link. TODO confirm per object: open it in C4C and compare the URL.
+  C4C_TYPE_ACCOUNT: "COD_ACCOUNT_TT"
+  C4C_TYPE_CONTACT: "COD_CONTACT_TT"
+  C4C_TYPE_ORDER: "COD_SALES_ORDER_TT"
+  C4C_TYPE_TASK: "COD_TASK_TT"
+  # Timing footer for testing. Leave off for agents.
+  SHOW_DIAGNOSTICS: "false"

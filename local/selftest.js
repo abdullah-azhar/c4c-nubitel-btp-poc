@@ -1,8 +1,10 @@
 'use strict';
 /**
  * Automated check of the POC in a real (headless) Chromium.
- * Needs Playwright: `npm i -D playwright` then `npx playwright install chromium`.
- * Start the servers first (`npm start`), then run `npm test`.
+ * Needs Playwright: `npm i -D playwright` then `npx playwright install chromium`
+ * (or set PW_CHROMIUM to an installed Chrome/Edge).
+ * Start the servers first with a short saved-copy life so expiry can be tested:
+ *   CACHE_TTL_SECONDS=12 npm start      then, in another terminal:   npm test
  * Screenshots are written to ./local/screens/.
  */
 const path = require('path');
@@ -10,6 +12,8 @@ const fs = require('fs');
 const { chromium } = require('playwright');
 
 const HOST = 'http://localhost:8081/';
+const VIEW = 'http://localhost:8083';
+const NUB = 'http://localhost:8082';
 const OUT = path.join(__dirname, 'screens');
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -18,87 +22,181 @@ const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); c
 
 (async () => {
   const browser = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
-  const page = await browser.newPage({ viewport: { width: 1500, height: 820 } });
+  const page = await browser.newPage({ viewport: { width: 1500, height: 860 } });
   const consoleErrors = [];
   page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
-  let apiCalls = 0; // data calls the BTP view makes itself in Option B
-  page.on('request', (r) => { if (r.url().startsWith('http://localhost:8083/api/')) apiCalls++; });
+  let apiCalls = 0;      // data calls the view makes to its own BTP backend
+  let unauthorized = 0;  // 401 answers (an expired token)
+  page.on('request', (r) => { if (r.url().startsWith(VIEW + '/api/')) apiCalls++; });
+  page.on('response', (r) => { if (r.url().startsWith(VIEW + '/api/') && r.status() === 401) unauthorized++; });
 
   await page.goto(HOST);
   const nb = page.frameLocator('.mashup-slot iframe');
   const view = nb.frameLocator('#view');
+  const open = (n) => nb.locator('#convList li', { hasText: n }).click();
+  const name = (n, t = 8000) => view.locator('.cust-name', { hasText: n }).waitFor({ timeout: t });
+  const settled = () => view.locator('.skel').first().waitFor({ state: 'detached', timeout: 12000 });
+  const freshLoad = async () => { await view.locator('.skel').first().waitFor({ state: 'attached', timeout: 5000 }); await settled(); };
+  const cacheTxt = () => view.locator('#diagCache').textContent();
+  const mint = async (cid, phone, externalId) => (await (await fetch(NUB + '/nubitel-api/token', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cid, phone, externalId, agent: 'test' }),
+  })).json()).token;
 
-  // 1. Nesting renders: C4C -> Nubitel -> BTP view
+  // 1. Nesting renders and waits for a conversation
   await view.locator('#idle').waitFor({ timeout: 8000 });
   check('Three-layer nesting renders (C4C > Nubitel > BTP view)', true);
+  check('Idle screen says it is waiting for a conversation', /Waiting for a conversation/.test(await view.locator('#idle').textContent()));
 
-  // 2. Option A happy path, sections arrive independently
-  await nb.locator('#convList li', { hasText: 'Jenna Hopkins' }).click();
-  await view.locator('.cust-name', { hasText: 'Jenna Hopkins' }).waitFor({ timeout: 5000 });
-  const headerFirst = await view.locator('[data-section="order"] .skel').count();
-  check('Option A: customer header shows before slower sections', headerFirst > 0, `order still loading: ${headerFirst > 0}`);
-  await page.waitForTimeout(250);
-  await page.screenshot({ path: path.join(OUT, '1-loading-sections.png') });
-  await view.locator('[data-section="items"] li').first().waitFor({ timeout: 8000 });
-  await view.locator('[data-section="order"] .big').waitFor({ timeout: 8000 });
-  check('Option A: all sections load', true);
-  await page.screenshot({ path: path.join(OUT, '2-option-a-loaded.png') });
+  // 2. The link is not public: opened directly it is locked
+  const direct = await browser.newPage();
+  const resp = await direct.goto(VIEW + '/');
+  const lockedText = (await direct.locator('h1').textContent()) || '';
+  const appInLocked = await direct.locator('#refresh').count();
+  await direct.screenshot({ path: path.join(OUT, '0-locked.png') });
+  await direct.close();
+  check('Opening the view link directly shows a locked screen (403), not the app', resp.status() === 403 && /locked/i.test(lockedText) && appInLocked === 0, `status=${resp.status()}`);
+  const raw = await Promise.all(['/', '/config.js', '/view.js', '/view.css'].map((p) => fetch(VIEW + p)));
+  check('Page, config and scripts are refused unless loaded as a frame', raw.every((r) => r.status === 403), raw.map((r) => r.status).join(','));
+  check('/health stays open for probes', (await fetch(VIEW + '/health')).status === 200);
 
-  // 3. Per-section error does not block others
-  await nb.locator('#convList li', { hasText: 'Ali Hassan' }).click();
-  await view.locator('[data-section="order"] .state.error').waitFor({ timeout: 8000 });
-  await view.locator('[data-section="quote"] .big').waitFor({ timeout: 8000 });
-  check('Failed section shows its own error + Retry; others still load', true);
-  await page.screenshot({ path: path.join(OUT, '3-section-error.png') });
+  // 3. Known customer: the new layout and sections
+  await open('Jenna Hopkins');
+  await name('Jenna Hopkins');
+  const recoLoading = await view.locator('[data-section="reco"] .skel').count();
+  check('Customer header shows before the slower sections', recoLoading > 0, `recommendations still loading: ${recoLoading > 0}`);
+  await settled();
+  await page.screenshot({ path: path.join(OUT, '1-snapshot.png') });
+  const orderIds = await view.locator('[data-section="order"] .so-id').count();
+  const taskRows = await view.locator('[data-section="tasks"] .task').count();
+  const recoRows = await view.locator('[data-section="reco"] .tbl tbody tr').count();
+  check('Shows last sales order, open tasks and a recommendations table', orderIds === 1 && taskRows === 4 && recoRows >= 8, `order=${orderIds} tasks=${taskRows} reco rows=${recoRows}`);
+  check('Quote section is gone', (await view.locator('[data-section="quote"]').count()) === 0);
+  const monthLabel = new Date().toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' });
+  const recoPeriod = await view.locator('#recoPeriod').textContent();
+  check('Recommendations are for the current month and year', recoPeriod.includes(monthLabel), `${recoPeriod} (expected ${monthLabel})`);
+  const sty = await view.locator('[data-section="reco"] .scroll').evaluate((n) => ({ overflowY: getComputedStyle(n).overflowY, sticky: getComputedStyle(n.querySelector('th')).position }));
+  check('Recommendations table scrolls in its own section with a sticky header', sty.overflowY === 'auto' && sty.sticky === 'sticky', JSON.stringify(sty));
+  const inBar = await view.locator('.bar #refresh').count();
+  const inCust = await view.locator('.cust #refresh').count();
+  const btn = await view.locator('#refresh').boundingBox();
+  const body = await view.locator('body').boundingBox();
+  check('Refresh is an icon in the top bar, top right, not in the customer header', inBar === 1 && inCust === 0 && btn.x + btn.width > body.x + body.width - 30 && btn.y - body.y < 40, `x=${Math.round(btn.x - body.x)} of ${Math.round(body.width)}`);
+  const links = await view.locator('a.icon-link').evaluateAll((as) => as.map((a) => ({ label: a.getAttribute('aria-label') || '', href: a.href })));
+  const kinds = ['contact', 'account', 'order', 'task'];
+  check('Contact, account, order and task each have an open-in-C4C icon link', kinds.every((k) => links.some((l) => l.label.toLowerCase().includes(k) && /InternalID=/.test(l.href))), `${links.length} links`);
+  check('Open-in-C4C controls are icons (no text buttons)', (await view.locator('#openC4C').count()) === 0);
 
-  // 4. Empty states
-  await nb.locator('#convList li', { hasText: 'Mei Ling Tan' }).click();
-  await view.locator('[data-section="quote"] .state.empty', { hasText: 'No open quote' }).waitFor({ timeout: 8000 });
-  check('Empty sections show "No open quote" / "No open tickets", not errors', true);
+  // 4. One failing section does not block the others
+  await open('Ali Hassan');
+  await name('Ali Hassan');
+  await view.locator('[data-section="order"] .state.error').waitFor({ timeout: 9000 });
+  await view.locator('[data-section="tasks"] .task').first().waitFor({ timeout: 9000 });
+  await view.locator('[data-section="reco"] .tbl tbody tr').first().waitFor({ timeout: 9000 });
+  check('Failed section shows its own error + Retry; the others still load', (await view.locator('[data-section="order"] .state.error button').count()) === 1);
 
-  // 5. Not found and multiple matches
-  await nb.locator('#convList li', { hasText: '+60 11-5555 0000' }).click();
-  await view.locator('.cust-name', { hasText: 'Customer not found' }).waitFor({ timeout: 5000 });
-  check('Unknown number shows "Customer not found"', true);
-  await nb.locator('#convList li', { hasText: 'June Wong' }).click();
-  await view.locator('.cust-name', { hasText: '2 matching contacts' }).waitFor({ timeout: 5000 });
-  check('Shared number lists both matching contacts', true);
-  await page.screenshot({ path: path.join(OUT, '4-multiple-matches.png') });
+  // 5. Empty states
+  await open('Mei Ling Tan');
+  await view.locator('[data-section="order"] .state.empty', { hasText: 'No sales orders yet' }).waitFor({ timeout: 9000 });
+  await view.locator('[data-section="tasks"] .state.empty', { hasText: 'No open tasks' }).waitFor({ timeout: 9000 });
+  check('Empty sections say "No sales orders yet" / "No open tasks", not errors', true);
 
-  // 6. Rapid switching: late data for earlier chats is dropped
+  // 6. Several contacts on one number: the agent picks
+  await open('June Wong');
+  await view.locator('.chooser-title', { hasText: '2 contacts share this number' }).waitFor({ timeout: 6000 });
+  check('Shared number asks which contact is calling', (await view.locator('.match button').count()) === 2);
+  await view.locator('.match button').first().click();
+  await name('June Wong Yee Chun');
+  await view.locator('.cust-sub', { hasText: 'Wong Pharmacy (KL)' }).waitFor({ timeout: 3000 });
+  await settled();
+  check('Picking a contact loads that account', true);
+  await page.screenshot({ path: path.join(OUT, '2-multiple-picked.png') });
+
+  // 7. Unknown caller: choose, then a popup opens on top
+  await open('+60 11-5555 0000');
+  await view.locator('#unknown').waitFor({ state: 'visible', timeout: 6000 });
+  const unkText = await view.locator('#unknown').textContent();
+  check('Unknown number shows its own screen with two options', /Unknown caller/.test(unkText) && (await view.locator('#chooseExisting').isVisible()) && (await view.locator('#chooseNew').isVisible()));
+  check('No popup is open until an option is chosen', (await view.locator('#overlay').isHidden()));
+  await page.screenshot({ path: path.join(OUT, '3-unknown-caller.png') });
+  await view.locator('#chooseExisting').click();
+  await view.locator('#overlay').waitFor({ state: 'visible', timeout: 3000 });
+  check('Choosing an existing contact opens a popup on top', (await view.locator('#dlgTitle').textContent()) === 'Add number to an existing contact' && (await view.locator('#dialog[role="dialog"]').count()) === 1);
+  check('Save is disabled until a contact is selected', await view.locator('#dlgFoot .btn', { hasText: 'Save number' }).isDisabled());
+  await view.locator('#dlgBody input[type="search"]').fill('siti');
+  await view.locator('#dlgBody [role="option"]').first().waitFor({ timeout: 5000 });
+  check('Search lists the matching contacts', (await view.locator('#dlgBody [role="option"]').count()) === 2);
+  await view.locator('#dlgBody [role="option"]').first().click();
+  await page.screenshot({ path: path.join(OUT, '4-popup-existing.png') });
+  await view.locator('#dlgFoot .btn', { hasText: 'Save number' }).click();
+  await view.locator('#overlay').waitFor({ state: 'hidden', timeout: 6000 });
+  await name('Siti Aminah', 9000);
+  await settled();
+  check('Saving the number on an existing contact loads that customer', true);
+  check('Nubitel is told the contact was updated', /Contact updated/.test(await nb.locator('#testResults').textContent()));
+
+  await open('+60 18-222 9999');
+  await view.locator('#unknown').waitFor({ state: 'visible', timeout: 6000 });
+  await view.locator('#chooseNew').click();
+  await view.locator('#overlay').waitFor({ state: 'visible', timeout: 3000 });
+  check('Choosing a new contact opens the create popup', (await view.locator('#dlgTitle').textContent()) === 'Create a new contact');
+  await page.keyboard.press('Escape');
+  await view.locator('#overlay').waitFor({ state: 'hidden', timeout: 3000 });
+  check('Escape closes the popup without saving', await view.locator('#unknown').isVisible());
+  await view.locator('#chooseNew').click();
+  await view.locator('#dlgFoot .btn', { hasText: 'Create contact' }).click();
+  check('Create popup asks for the missing required fields', /Last name is required/.test(await view.locator('#dlgBody').textContent()) && /Pick an account/.test(await view.locator('#dlgBody').textContent()));
+  const inputs = view.locator('#dlgBody input');
+  await inputs.nth(0).fill('Ivy');
+  await inputs.nth(1).fill('Tester');
+  await inputs.nth(2).fill('klinik lim');
+  await view.locator('#dlgBody [role="option"]').first().click();
+  await inputs.nth(3).fill('not-an-email');
+  await view.locator('#dlgFoot .btn', { hasText: 'Create contact' }).click();
+  check('Create popup rejects a bad email', /valid email/.test(await view.locator('#dlgBody').textContent()));
+  check('The call number is filled in and cannot be edited', (await inputs.nth(4).inputValue()) === '018-222 9999' && await inputs.nth(4).evaluate((n) => n.readOnly));
+  await inputs.nth(3).fill('ivy@example.com');
+  await page.screenshot({ path: path.join(OUT, '5-popup-create.png') });
+  await view.locator('#dlgFoot .btn', { hasText: 'Create contact' }).click();
+  await view.locator('#overlay').waitFor({ state: 'hidden', timeout: 6000 });
+  await name('Ivy Tester', 9000);
+  await view.locator('.cust-sub', { hasText: 'Klinik Lim' }).waitFor({ timeout: 3000 });
+  await settled();
+  check('Creating a contact loads the new customer', true);
+
+  // 8. Rapid switching: late data for earlier chats is dropped
   await nb.locator('#rapid').click();
   await page.waitForTimeout(9000);
-  const name = await view.locator('.cust-name').first().textContent();
   const dropped = await view.locator('#diagDropped').textContent();
-  const items = await view.locator('[data-section="items"] li').count();
-  check('Rapid switch ends on the right customer', name.trim() === 'Jenna Hopkins', name.trim());
+  const nm = await view.locator('.cust-name').first().textContent();
+  check('Rapid switch ends on the right customer', nm.trim() === 'Jenna Hopkins', nm.trim());
   check('Late responses from earlier chats were dropped', /stale dropped: [1-9]/.test(dropped), dropped);
-  check('No mixed data after rapid switch', items === 3, `items=${items}`);
+  check('No mixed data after rapid switch', (await view.locator('[data-section="tasks"] .task').count()) === 4);
 
-  // 7. Option B: signed token, BTP calls the data source
-  await nb.locator('#mode').selectOption('pull');
-  await nb.locator('#convList li', { hasText: 'Jenna Hopkins' }).click();
-  await view.locator('#diagMode', { hasText: 'B (token)' }).waitFor({ timeout: 5000 });
-  await view.locator('[data-section="order"] .big').waitFor({ timeout: 8000 });
-  check('Option B: token flow loads all sections', true);
-  await page.screenshot({ path: path.join(OUT, '5-option-b.png') });
+  // 9. Security checks on the data API
+  const tok = await mint('conv-2294', '+60 8347 2856', 'NUB-CALL-100234');
+  const auth = { headers: { Authorization: 'Bearer ' + tok } };
+  const none = await Promise.all(['/api/customer', '/api/section/order', '/api/contacts/search?q=siti', '/api/accounts/search?q=klinik'].map((p) => fetch(VIEW + p)));
+  const forged = await fetch(VIEW + '/api/customer', { headers: { Authorization: 'Bearer abc.def' } });
+  const postNone = await fetch(VIEW + '/api/contact', { method: 'POST', body: '{}' });
+  check('Data API rejects missing or forged tokens (reads, search and writes)', none.every((r) => r.status === 401) && forged.status === 401 && postNone.status === 401, `${none.map((r) => r.status)} forged=${forged.status} write=${postNone.status}`);
+  const other = await fetch(VIEW + '/api/section/order?contact=2000457', auth);
+  const own = await fetch(VIEW + '/api/section/order?contact=2000456', auth);
+  check('A token can only read its own customer (another contact is refused)', other.status === 403 && own.status === 200, `other=${other.status} own=${own.status}`);
+  const badWrite = await fetch(VIEW + '/api/contact', { method: 'POST', headers: { ...auth.headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'update', contactId: 'x y' }) });
+  check('Contact write rejects invalid input', badWrite.status === 400, `status=${badWrite.status}`);
 
-  // 8. Option B: forged / missing token is rejected by BTP
-  const forged = (await fetch('http://localhost:8083/api/customer', { headers: { Authorization: 'Bearer abc.def' } })).status;
-  const noToken = (await fetch('http://localhost:8083/api/section/order')).status;
-  check('BTP API rejects a forged or missing token', forged === 401 && noToken === 401, `forged=${forged} missing=${noToken}`);
-
-  // 9. Messages from the wrong origin are ignored by the view
+  // 10. Messages from the wrong origin are ignored by the view
+  await open('Jenna Hopkins');
+  await name('Jenna Hopkins');
+  await settled();
   await page.evaluate(() => {
-    // The C4C host (wrong origin, not the view's parent) tries to inject data
     const nbFrame = document.querySelector('.mashup-slot iframe');
-    try { nbFrame.contentWindow.frames[0].postMessage({ v: 1, type: 'conversation.open', conversationId: 'evil', mode: 'push' }, '*'); } catch (e) {}
+    try { nbFrame.contentWindow.frames[0].postMessage({ v: 1, type: 'conversation.open', conversationId: 'evil', token: 'x.y' }, '*'); } catch (e) {}
   });
   await page.waitForTimeout(500);
-  const stillJenna = await view.locator('.cust-name').first().textContent();
-  check('View ignores messages from origins other than Nubitel', stillJenna.trim() === 'Jenna Hopkins');
+  check('View ignores messages from origins other than Nubitel', (await view.locator('.cust-name').first().textContent()).trim() === 'Jenna Hopkins');
 
-  // 10. Framing outside the allowed chain is refused (CSP frame-ancestors)
+  // 11. Framing outside the allowed chain is refused (CSP frame-ancestors)
   const evil = await browser.newPage();
   await evil.goto('http://127.0.0.1:8081/'); // same app, different origin, not in frame-ancestors
   await evil.waitForTimeout(2500);
@@ -108,108 +206,65 @@ const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); c
   check('Nubitel refuses to load inside a non-approved host', !nbRendered, `rendered=${nbRendered}`);
   await evil.close();
 
-  // 11. Saved copy and Refresh. Needs the servers started with CACHE_TTL_SECONDS=12 (see README).
-  const queries = async () => Number((await nb.locator('#calls').textContent()).match(/queries:\s*(\d+)/)[1]);
-  // freshLoad: loading placeholders appear and then all go away (the chat really was queried).
-  // settled: nothing is loading any more (also true at once for a chat shown from the saved copy).
-  const freshLoad = async () => {
-    await view.locator('.skel').first().waitFor({ state: 'attached', timeout: 5000 });
-    await view.locator('.skel').first().waitFor({ state: 'detached', timeout: 12000 });
-  };
-  const settled = () => view.locator('.skel').first().waitFor({ state: 'detached', timeout: 12000 });
-  const cacheTxt = () => view.locator('#diagCache').textContent();
-  const open = (name) => nb.locator('#convList li', { hasText: name }).click();
-
-  // 11a. Entries expire: a chat saved more than 12 s ago is loaded again from C4C
-  await nb.locator('#mode').selectOption('push'); // reloads Jenna fresh through option A
-  await view.locator('#diagMode', { hasText: 'A (push)' }).waitFor({ timeout: 5000 });
-  await freshLoad();
-  await page.waitForTimeout(13000);
-  const q0 = await queries();
+  // 12. Saved copy, Refresh and token renewal. Needs CACHE_TTL_SECONDS=12.
+  await page.waitForTimeout(13000);                       // Jenna's saved copy expires
+  let a0 = apiCalls;
   await open('Jenna Hopkins');
   await freshLoad();
-  const q1 = await queries();
-  check('Saved copy expires after the configured time (chat is queried again)', q1 - q0 === 5, `queries +${q1 - q0}`);
+  check('Saved copy expires after the configured time (chat is loaded again)', apiCalls - a0 === 4, `data calls +${apiCalls - a0}`);
 
-  // 11b. Switching back to a saved chat: instant, no placeholders, no C4C query
   await open('Mei Ling Tan');
-  await view.locator('.cust-name', { hasText: 'Mei Ling Tan' }).waitFor({ timeout: 5000 });
+  await name('Mei Ling Tan');
   await settled();
-  const q2 = await queries();
+  a0 = apiCalls;
   await open('Jenna Hopkins');
-  await view.locator('.cust-name', { hasText: 'Jenna Hopkins' }).waitFor({ timeout: 3000 });
+  await name('Jenna Hopkins', 3000);
   const placeholders = await view.locator('.skel').count();
-  await page.waitForTimeout(600);
-  const q3 = await queries();
-  const cacheState = await cacheTxt();
-  check('Switching back to a saved chat shows it at once, no loading placeholders', placeholders === 0, `placeholders=${placeholders}`);
-  check('Switching back to a saved chat makes no C4C query', q3 === q2, `queries ${q2} -> ${q3}`);
-  check('View reports a saved-copy hit', /cache: hit/.test(cacheState), cacheState);
-  await page.screenshot({ path: path.join(OUT, '7-saved-copy.png') });
+  await page.waitForTimeout(700);
+  check('Switching back to a saved chat shows it at once, no placeholders, no data calls', placeholders === 0 && apiCalls === a0, `placeholders=${placeholders}, data calls +${apiCalls - a0}`);
+  check('View reports a saved-copy hit', /cache: hit/.test(await cacheTxt()), await cacheTxt());
+  await page.screenshot({ path: path.join(OUT, '6-saved-copy.png') });
 
-  // 11c. A section that failed is never saved: only that section is asked again
-  await open('Ali Hassan');
-  await view.locator('.cust-name', { hasText: 'Ali Hassan' }).waitFor({ timeout: 5000 });
-  await settled();
-  await view.locator('[data-section="order"] .state.error').waitFor({ timeout: 3000 });
-  await open('Mei Ling Tan');
-  await view.locator('.cust-name', { hasText: 'Mei Ling Tan' }).waitFor({ timeout: 3000 });
-  await settled();
-  const q4 = await queries();
-  await open('Ali Hassan');
-  await view.locator('.cust-name', { hasText: 'Ali Hassan' }).waitFor({ timeout: 3000 });
-  await view.locator('[data-section="order"] .skel').first().waitFor({ state: 'attached', timeout: 3000 });
-  await settled();
-  await view.locator('[data-section="order"] .state.error').waitFor({ timeout: 3000 });
-  const q5 = await queries();
-  const ali = await cacheTxt();
-  check('Failed section is not saved: only that one is re-queried', q5 - q4 === 1, `queries +${q5 - q4}`);
-  check('Partly saved chat is reported as a partial hit', /cache: partial/.test(ali), ali);
-
-  // 11d. Refresh throws the saved copy away and loads everything again
-  await open('Jenna Hopkins');
-  await view.locator('.cust-name', { hasText: 'Jenna Hopkins' }).waitFor({ timeout: 5000 });
-  await settled();
-  const q6 = await queries();
   const refreshBtn = view.locator('#refresh');
-  check('Refresh button is available once the chat has loaded', await refreshBtn.isEnabled());
+  check('Refresh icon is enabled once the chat has loaded', await refreshBtn.isEnabled());
+  a0 = apiCalls;
   await refreshBtn.click();
   await view.locator('#age', { hasText: 'Updating' }).waitFor({ timeout: 3000 });
-  check('Refresh button is disabled while updating', await refreshBtn.isDisabled());
+  check('Refresh icon is disabled while updating', await refreshBtn.isDisabled());
   await view.locator('#age', { hasText: 'Updated just now' }).waitFor({ timeout: 12000 });
   await settled();
-  const q7 = await queries();
-  check('Refresh queries C4C again for every section', q7 - q6 === 5, `queries +${q7 - q6}`);
-  check('Refresh button comes back after the update', await refreshBtn.isEnabled());
-  await page.screenshot({ path: path.join(OUT, '8-refreshed.png') });
+  check('Refresh loads the customer and every section again', apiCalls - a0 === 4, `data calls +${apiCalls - a0}`);
+  check('Refresh icon comes back after the update', await refreshBtn.isEnabled());
+  await page.screenshot({ path: path.join(OUT, '7-refreshed.png') });
 
-  // 11e. Option B: saved copy works there too, and Refresh asks for a new token
-  await nb.locator('#mode').selectOption('pull');
-  await view.locator('#diagMode', { hasText: 'B (token)' }).waitFor({ timeout: 5000 });
-  await freshLoad();
+  await open('Ali Hassan');
+  await name('Ali Hassan');
+  await settled();
   await open('Mei Ling Tan');
-  await view.locator('.cust-name', { hasText: 'Mei Ling Tan' }).waitFor({ timeout: 6000 });
+  await name('Mei Ling Tan', 3000);
+  a0 = apiCalls;
+  await open('Ali Hassan');
+  await name('Ali Hassan', 3000);
+  await view.locator('[data-section="order"] .skel').first().waitFor({ state: 'attached', timeout: 3000 });
   await settled();
-  const a0 = apiCalls;
-  await open('Jenna Hopkins');
-  await view.locator('.cust-name', { hasText: 'Jenna Hopkins' }).waitFor({ timeout: 3000 });
-  const placeholdersB = await view.locator('.skel').count();
-  await page.waitForTimeout(600);
-  check('Option B: switching back makes no data calls and shows no placeholders', apiCalls === a0 && placeholdersB === 0, `api calls +${apiCalls - a0}, placeholders=${placeholdersB}`);
-  await view.locator('#refresh').click();
-  await view.locator('#age', { hasText: 'Updating' }).waitFor({ timeout: 3000 });
-  await view.locator('#age', { hasText: 'Updated just now' }).waitFor({ timeout: 12000 });
-  await settled();
-  check('Option B: Refresh loads everything again with a new token', apiCalls - a0 >= 5, `api calls +${apiCalls - a0}`);
+  check('A failed section is never saved: only that one is asked again', apiCalls - a0 === 1 && /cache: partial/.test(await cacheTxt()), `data calls +${apiCalls - a0}, ${await cacheTxt()}`);
 
-  // 12. Mashup rebuilt on navigation drops Nubitel (reload counter)
+  await open('Jenna Hopkins');
+  await name('Jenna Hopkins');
+  await settled();
+  const u0 = unauthorized;
+  await nb.locator('#expiry').click();
+  await freshLoad();
+  const errorsShown = await view.locator('.state.error').count();
+  check('An expired token is renewed on the spot and the view still loads', unauthorized > u0 && errorsShown === 0, `401s=${unauthorized - u0}, error states=${errorsShown}`);
+
+  // 13. Mashup rebuilt on navigation drops Nubitel (reload counter)
   await page.locator('input[name="persist"][value="rerender"]').check();
   await page.locator('.nav button', { hasText: 'Accounts' }).click();
   await page.locator('#log li.fail', { hasText: 'reloaded' }).waitFor({ timeout: 5000 });
   check('Harness flags a Nubitel reload when the mashup is rebuilt', true);
-  await page.screenshot({ path: path.join(OUT, '6-reload-warning.png') });
 
-  const relevantErrors = consoleErrors.filter((t) => !/frame-ancestors|Refused to frame|ERR_BLOCKED|favicon/i.test(t));
+  const relevantErrors = consoleErrors.filter((t) => !/frame-ancestors|Refused to frame|ERR_BLOCKED|favicon|status of (401|403|404|409|502)/i.test(t)); // 502 = the simulated failing order section
   check('No unexpected console errors', relevantErrors.length === 0, relevantErrors.slice(0, 3).join(' | '));
 
   await browser.close();

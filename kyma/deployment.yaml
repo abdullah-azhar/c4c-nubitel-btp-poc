@@ -39,6 +39,11 @@ spec:
             # can never run on the built-in POC default secret.
             - secretRef:
                 name: c4c-lean-view-secret
+            # C4C technical user (C4C_USER, C4C_PASSWORD) for DATA_SOURCE=c4c. Created with kubectl or the
+            # Kyma dashboard, never in a file. Optional, so the mock setup runs without it.
+            - secretRef:
+                name: c4c-odata-credentials
+                optional: true
           readinessProbe:
             httpGet:
               path: /health

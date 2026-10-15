@@ -3,49 +3,106 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
   <title>Customer snapshot</title>
   <link rel="icon" href="favicon.svg">
   <link rel="stylesheet" href="view.css">
   <script src="config.js"></script>
 </head>
 <body>
-  <main id="app" aria-live="polite">
-    <section id="idle" class="idle">
-      <p class="idle-title">No conversation selected</p>
-      <p class="muted">Open a chat in Nubitel to see the customer from SAP C4C.</p>
-    </section>
+  <!-- Icons (line style, 24x24). Used as <svg><use href="#i-name"/></svg> -->
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-refresh" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></symbol>
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+    <symbol id="i-user-plus" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></symbol>
+    <symbol id="i-user-check" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+  </svg>
 
-    <section id="view" hidden>
-      <header class="sec customer" data-section="customer">
-        <div class="customer-main">
-          <div class="slot"></div>
-        </div>
-        <div class="actions">
-          <a id="openC4C" class="btn" target="_blank" rel="noopener noreferrer" hidden>Open in C4C</a>
-          <button id="refresh" class="btn ghost" type="button" title="Reload this customer from C4C" aria-label="Refresh customer data from C4C" disabled><span aria-hidden="true">&#8635;</span> Refresh</button>
-          <span id="age" class="age" aria-live="off"></span>
-        </div>
-      </header>
+  <div id="app">
+    <!-- Top bar: the refresh icon lives here, top right, not in the customer header -->
+    <header class="bar">
+      <span class="bar-title">Customer snapshot</span>
+      <span id="age" class="age" aria-live="off"></span>
+      <button id="refresh" class="icon-btn" type="button" title="Refresh from C4C" aria-label="Refresh customer data from C4C" disabled>
+        <svg class="ic" aria-hidden="true"><use href="#i-refresh"/></svg>
+      </button>
+    </header>
 
-      <div class="tiles">
-        <article class="sec tile" data-section="quote"><h3>Open quote</h3><div class="slot"></div></article>
-        <article class="sec tile" data-section="order"><h3>Last order</h3><div class="slot"></div></article>
-        <article class="sec tile" data-section="tickets"><h3>Open tickets</h3><div class="slot"></div></article>
-      </div>
-
-      <section class="sec items" data-section="items">
-        <h3>Recommended items</h3>
-        <div class="slot"></div>
+    <main id="main">
+      <!-- Nothing selected yet -->
+      <section id="idle" class="idle">
+        <svg class="ic ic-xl" aria-hidden="true"><use href="#i-phone"/></svg>
+        <p class="idle-title">Waiting for a conversation</p>
+        <p class="muted">Open a chat or call in Nubitel to see the customer from C4C.</p>
       </section>
-    </section>
-  </main>
 
-  <footer id="diag" class="diag">
-    <span id="diagMode">mode: -</span>
-    <span id="diagTimes"></span>
-    <span id="diagCache">cache: -</span>
-    <span id="diagDropped">stale dropped: 0</span>
-  </footer>
+      <!-- Known customer -->
+      <section id="view" class="stack" hidden aria-live="polite">
+        <div class="cust" data-section="customer"><div class="slot"></div></div>
+
+        <article class="card" data-section="order">
+          <h3>Last sales order</h3>
+          <div class="slot"></div>
+        </article>
+
+        <article class="card" data-section="tasks">
+          <h3>Open tasks <span id="taskCount" class="count"></span></h3>
+          <div class="slot"></div>
+        </article>
+
+        <article class="card grow" data-section="reco">
+          <h3>Recommended products <span id="recoPeriod" class="count"></span></h3>
+          <div class="slot"></div>
+        </article>
+      </section>
+
+      <!-- Unknown number: pick what to do, then a popup opens -->
+      <section id="unknown" class="unknown" hidden>
+        <div class="unk-head">
+          <svg class="ic ic-xl warn" aria-hidden="true"><use href="#i-help"/></svg>
+          <div>
+            <p class="unk-title">Unknown caller</p>
+            <p class="unk-sub"><span id="unkPhone" class="phone"></span> is not saved on any contact in C4C.</p>
+          </div>
+        </div>
+        <div class="choices">
+          <button id="chooseExisting" class="choice" type="button">
+            <svg class="ic ic-lg" aria-hidden="true"><use href="#i-user-check"/></svg>
+            <span><b>Add to an existing contact</b><small>Find the person in C4C and save this number on them</small></span>
+          </button>
+          <button id="chooseNew" class="choice" type="button">
+            <svg class="ic ic-lg" aria-hidden="true"><use href="#i-user-plus"/></svg>
+            <span><b>Create a new contact</b><small>Add a new contact person for this number</small></span>
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <!-- Popup (content is built by view.js) -->
+    <div id="overlay" class="overlay" hidden>
+      <div id="dialog" class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+        <header class="dlg-head">
+          <h2 id="dlgTitle"></h2>
+          <button id="dlgClose" class="icon-btn" type="button" aria-label="Close"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
+        </header>
+        <div id="dlgBody" class="dlg-body"></div>
+        <footer id="dlgFoot" class="dlg-foot"></footer>
+      </div>
+    </div>
+
+    <!-- Testing footer, hidden unless SHOW_DIAGNOSTICS=true -->
+    <footer id="diag" class="diag" hidden>
+      <span id="diagMode">view: -</span>
+      <span id="diagTimes"></span>
+      <span id="diagCache">cache: -</span>
+      <span id="diagDropped">stale dropped: 0</span>
+    </footer>
+  </div>
 
   <script src="view.js"></script>
 </body>
