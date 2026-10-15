@@ -27,13 +27,17 @@ customer data and no C4C technical-user password here.
 ## 1. One-time tools on your computer
 
 * `kubectl` (already installed with Docker Desktop).
-* The **kubelogin** plugin. BTP kubeconfigs sign you in through the browser with it:
+* The **kubelogin** plugin. BTP kubeconfigs sign you in through the browser with
+  it, and they call a program named exactly `kubectl-oidc_login`, so the
+  executable must have that name and be on your PATH:
   ```powershell
-  winget install int128.kubelogin
-  kubectl oidc-login --help     # must print help; see the note below if not
+  # download kubelogin_windows_amd64.zip from github.com/int128/kubelogin/releases (Apache-2.0)
+  # put kubelogin.exe in a folder on your PATH and copy it to the required name:
+  Copy-Item kubelogin.exe kubectl-oidc_login.exe
+  kubectl-oidc_login --help     # must print help
   ```
-  If `kubectl oidc-login` is not found, copy `kubelogin.exe` to a folder on your
-  PATH and name the copy `kubectl-oidc_login.exe`.
+  (`winget install int128.kubelogin` installs it as `kubelogin.exe` only, so you
+  still need the renamed copy.)
 
 ## 2. Get the kubeconfig (you sign in, in your browser)
 
