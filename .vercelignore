@@ -1,0 +1,6 @@
+btp-view/
+mock-c4c-host/
+local/
+docs/
+manifest.yml
+*.zip

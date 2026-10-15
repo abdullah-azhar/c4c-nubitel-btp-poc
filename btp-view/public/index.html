@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Customer snapshot</title>
+  <link rel="icon" href="favicon.svg">
+  <link rel="stylesheet" href="view.css">
+  <script src="config.js"></script>
+</head>
+<body>
+  <main id="app" aria-live="polite">
+    <section id="idle" class="idle">
+      <p class="idle-title">No conversation selected</p>
+      <p class="muted">Open a chat in Nubitel to see the customer from SAP C4C.</p>
+    </section>
+
+    <section id="view" hidden>
+      <header class="sec customer" data-section="customer">
+        <div class="customer-main">
+          <div class="slot"></div>
+        </div>
+        <a id="openC4C" class="btn" target="_blank" rel="noopener noreferrer" hidden>Open in C4C</a>
+      </header>
+
+      <div class="tiles">
+        <article class="sec tile" data-section="quote"><h3>Open quote</h3><div class="slot"></div></article>
+        <article class="sec tile" data-section="order"><h3>Last order</h3><div class="slot"></div></article>
+        <article class="sec tile" data-section="tickets"><h3>Open tickets</h3><div class="slot"></div></article>
+      </div>
+
+      <section class="sec items" data-section="items">
+        <h3>Recommended items</h3>
+        <div class="slot"></div>
+      </section>
+    </section>
+  </main>
+
+  <footer id="diag" class="diag">
+    <span id="diagMode">mode: -</span>
+    <span id="diagTimes"></span>
+    <span id="diagDropped">stale dropped: 0</span>
+  </footer>
+
+  <script src="view.js"></script>
+</body>
+</html>

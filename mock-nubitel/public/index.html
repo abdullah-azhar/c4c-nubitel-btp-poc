@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mock Nubitel</title>
+  <link rel="icon" href="favicon.svg">
+  <link rel="stylesheet" href="nubitel.css">
+  <script src="config.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <strong>Mock Nubitel</strong>
+    <span class="muted">stands in for the Nubitel agent app</span>
+    <span class="spacer"></span>
+    <label>Security option
+      <select id="mode">
+        <option value="push">A · Nubitel calls C4C</option>
+        <option value="pull">B · Signed token, BTP calls C4C</option>
+      </select>
+    </label>
+    <button id="rapid" type="button" title="Switch between chats quickly to test that late data is dropped">Rapid switch test</button>
+  </header>
+
+  <div class="layout">
+    <aside class="convs">
+      <div class="convs-head">Assigned conversations</div>
+      <ul id="convList"></ul>
+      <div class="diag-tests">
+        <div class="convs-head">Browser checks</div>
+        <button type="button" data-test="mic">Microphone</button>
+        <button type="button" data-test="clipboard">Clipboard</button>
+        <button type="button" data-test="cookie">Session cookie</button>
+        <ul id="testResults" class="results"></ul>
+      </div>
+    </aside>
+
+    <section class="chat">
+      <div id="chatHead" class="chat-head">Select a conversation</div>
+      <div id="chatBody" class="chat-body"></div>
+      <div class="chat-input"><input type="text" placeholder="Write a reply" disabled><button type="button" disabled>Send</button></div>
+    </section>
+
+    <section class="embed">
+      <!-- The BTP view. Only the permissions it needs; data goes in by postMessage, never in the URL. -->
+      <iframe id="view" title="C4C customer view"
+              sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+              referrerpolicy="no-referrer"></iframe>
+    </section>
+  </div>
+
+  <script src="nubitel.js"></script>
+</body>
+</html>

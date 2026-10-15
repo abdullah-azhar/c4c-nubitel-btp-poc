@@ -1,0 +1,128 @@
+# POC: Nubitel in SAP C4C, with a SAP BTP customer view
+
+Proof of concept for the design where:
+
+```
+SAP C4C  ──(mashup iframe)──▶  Nubitel agent app  ──(iframe)──▶  BTP lean view  ──▶  SAP C4C data
+```
+
+It answers the questions that decide whether the design works:
+
+1. Does a three-layer iframe chain (C4C → Nubitel → BTP) render, and what do the
+   frame permissions need to be?
+2. Can each section of the customer view load on its own, so the agent sees the
+   customer first instead of waiting for the whole panel?
+3. Is the data safe: right customer only, no data in URLs, stale data dropped,
+   no messages accepted from the wrong place?
+4. Option A (Nubitel calls C4C) vs Option B (signed token, BTP calls C4C): both work here.
+5. Inside C4C: do the microphone, clipboard and Nubitel's login cookie still work,
+   and does Nubitel survive C4C navigation?
+
+Questions 1–4 are answered locally. Question 5 can only be answered in your real
+C4C tenant (see `docs/TEST-CHECKLIST.md`, Stage 2).
+
+## What's in the box
+
+| Folder | What it is | Goes to production? |
+|---|---|---|
+| `btp-view/` | The BTP lean view: page + small Node server (security headers, Option B API) | Yes, this is the build |
+| `lib/` | Phone normalisation, signed tokens, C4C adapter (mock + real OData) | Yes |
+| `mock-nubitel/` | Stand-in for Nubitel: conversation list, Option A/B, browser checks | No, reference for Nubitel |
+| `mock-c4c-host/` | Simulated C4C shell with switchable mashup settings | No, local testing only |
+| `docs/MESSAGE-CONTRACT.md` | What Nubitel must send and receive | Hand to Nubitel |
+| `docs/TEST-CHECKLIST.md` | Local and real-tenant test cases | Test team |
+
+No npm dependencies. Node 18 or later.
+
+## Run locally (5 minutes)
+
+```bash
+npm start
+```
+
+Open **http://localhost:8081**. The three parts run on ports 8081 (C4C host),
+8082 (Nubitel) and 8083 (BTP view), so the browser treats them as different
+origins and applies real cross-origin rules.
+
+Try the conversations on the left; each one exercises a case:
+
+| Conversation | Shows |
+|---|---|
+| Jenna Hopkins | Happy path, sections loading one by one |
+| Kumar Singh | Slow sections |
+| June Wong | Two contacts share the number |
+| Ali Hassan | One section fails, the rest still load |
+| Mei Ling Tan | Empty quote and tickets |
+| +60 11-5555 0000 | Number not in C4C |
+
+Also try **Rapid switch test**, the **Security option** dropdown, the
+**Browser checks** buttons, and the mashup settings at the top of the C4C host.
+
+### Automated test
+
+```bash
+npm i -D playwright && npx playwright install chromium
+npm start            # in one terminal
+npm test             # in another: 16 checks, screenshots in local/screens/
+```
+
+Note: ports on `localhost` are different *origins* but the same *site*, so the
+session-cookie check always passes locally. Run it on real domains.
+
+## Deploy: GitHub, Vercel and BTP trial
+
+Step-by-step for the POC setup (mock Nubitel on Vercel, view on a BTP trial,
+added to C4C as a mashup): see **`docs/DEPLOY.md`**. The `api/` folder and
+`vercel.json` are the Vercel version of the mock Nubitel.
+
+## Deploy to SAP BTP (Cloud Foundry)
+
+1. Edit `manifest.yml`: Nubitel domain, C4C tenant URL, technical user.
+2. `cf login` to your subaccount and space, then `cf push`.
+3. Set secrets outside the manifest:
+   ```bash
+   cf set-env c4c-lean-view TOKEN_SECRET "<long random string>"
+   cf set-env c4c-lean-view C4C_PASSWORD "<technical user password>"   # only for DATA_SOURCE=c4c
+   cf restage c4c-lean-view
+   ```
+4. `mock-nubitel` (second app in the manifest) is optional: deploy it to test
+   the C4C mashup before Nubitel's build is ready. Give the mock Nubitel the
+   same `TOKEN_SECRET` if you test Option B.
+
+**FRAME_ANCESTORS must include both Nubitel's domain and your C4C tenant**
+(`https://<tenant>.crm.ondemand.com`). Browsers check every frame in the chain.
+
+## Connect to real C4C data
+
+Set `DATA_SOURCE=c4c` and the `C4C_*` variables. Before that, confirm the
+queries in `lib/c4c-adapter.js` against your tenant's metadata:
+`https://<tenant>.crm.ondemand.com/sap/c4c/odata/v1/c4codataapi/$metadata`.
+Each query is marked `TODO confirm`. In particular:
+
+* **Phone lookup**: C4C usually stores formatted numbers. Use a normalised
+  phone field if your tenant has one, or add an extension field.
+* **Recommended items**: no standard OData entity. Point
+  `RECOMMENDED_ITEMS_PATH` at your custom object or report.
+* **Technical user**: read-only, only the objects above.
+
+For production, replace the basic-auth technical user with the BTP Destination
+service (OAuth or certificate), and keep credentials out of app settings.
+
+## Security built into the POC
+
+* `frame-ancestors` CSP on both apps: only approved hosts can embed them.
+* Strict CSP on the view: own scripts and styles only, no inline code.
+* postMessage checked on both sides: exact origin, and source must be the
+  parent or child frame.
+* No customer data in URLs, browser storage or cookies. Rendered with
+  `textContent` only (no HTML injection).
+* Option B: HMAC-signed token, 60-second life, account derived from the token
+  on the server, per-token request limit, audit log with masked phone numbers.
+* Option A: C4C credentials stay on Nubitel's server, never in the browser.
+
+## Not in the POC
+
+* AI coach (later phase).
+* Writing anything back to C4C (the view is display only).
+* Production key management (asymmetric token keys, key rotation), BTP
+  Destination service, monitoring.

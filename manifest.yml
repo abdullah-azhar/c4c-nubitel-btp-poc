@@ -1,0 +1,37 @@
+# SAP BTP Cloud Foundry: deploy with `cf push` from this folder.
+# Replace every <...> value. Put secrets in with `cf set-env` (or a user-provided
+# service), not in this file.
+#
+#   cf set-env c4c-lean-view TOKEN_SECRET <long-random-secret>
+#   cf set-env c4c-lean-view C4C_PASSWORD <technical-user-password>   (only if DATA_SOURCE=c4c)
+#   cf restage c4c-lean-view
+---
+applications:
+  - name: c4c-lean-view
+    memory: 128M
+    instances: 1
+    buildpacks: [nodejs_buildpack]
+    command: node btp-view/server.js
+    health-check-type: http
+    health-check-http-endpoint: /health
+    env:
+      MESSAGE_ORIGINS: https://<nubitel-agent-domain>
+      FRAME_ANCESTORS: https://<nubitel-agent-domain>,https://<your-tenant>.crm.ondemand.com
+      C4C_UI_URL: https://<your-tenant>.crm.ondemand.com
+      DATA_SOURCE: mock            # switch to c4c once the queries are confirmed
+      C4C_BASE_URL: https://<your-tenant>.crm.ondemand.com
+      C4C_USER: <read-only-technical-user>
+      SECTION_TIMEOUT_MS: 6000
+
+  # Optional: host the mock Nubitel too, so you can add it to your real C4C
+  # tenant as a mashup and test the nesting before Nubitel's build is ready.
+  - name: mock-nubitel
+    memory: 128M
+    instances: 1
+    buildpacks: [nodejs_buildpack]
+    command: node mock-nubitel/server.js
+    env:
+      VIEW_URL: https://<c4c-lean-view-route>/
+      FRAME_ANCESTORS: https://<your-tenant>.crm.ondemand.com
+      HOST_ORIGIN: https://<your-tenant>.crm.ondemand.com
+      DATA_SOURCE: mock

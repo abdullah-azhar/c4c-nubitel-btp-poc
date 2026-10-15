@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Simulated C4C host</title>
+  <link rel="icon" href="favicon.svg">
+  <link rel="stylesheet" href="host.css">
+  <script src="config.js"></script>
+</head>
+<body>
+  <header class="shell">
+    <strong>SAP C4C</strong><span class="tag">simulated host for the POC</span>
+    <span class="spacer"></span>
+    <span id="loads" class="pill">Nubitel loads: 0</span>
+  </header>
+
+  <div class="frame">
+    <nav class="nav" aria-label="Simulated C4C navigation">
+      <button type="button" data-page="Home" class="active">Home</button>
+      <button type="button" data-page="Accounts">Accounts</button>
+      <button type="button" data-page="Live Activity">Live Activity</button>
+      <button type="button" data-page="Sales Quotes">Sales Quotes</button>
+    </nav>
+
+    <main class="content">
+      <section class="controls" aria-label="Mashup settings">
+        <h2>Mashup iframe settings <span class="muted">(what C4C puts on the Nubitel iframe)</span></h2>
+        <div class="row">
+          <label><input type="checkbox" id="allowMic" checked> allow="microphone"</label>
+          <label><input type="checkbox" id="allowClip" checked> allow="clipboard-write"</label>
+          <label><input type="checkbox" id="useSandbox"> sandbox (scripts, same-origin, forms, popups)</label>
+        </div>
+        <div class="row">
+          <span>When the agent navigates in C4C, the mashup is:</span>
+          <label><input type="radio" name="persist" value="persistent" checked> kept loaded</label>
+          <label><input type="radio" name="persist" value="rerender"> rebuilt (reloads Nubitel)</label>
+          <button type="button" id="apply">Apply and reload mashup</button>
+        </div>
+        <p class="muted small">Current page: <strong id="page">Home</strong>. Page content would sit here; the mashup pane below stands in for the Nubitel mashup.</p>
+      </section>
+
+      <section class="mashup" aria-label="Nubitel mashup">
+        <div id="mashupSlot" class="mashup-slot"></div>
+      </section>
+    </main>
+
+    <aside class="log">
+      <h2>Diagnostics</h2>
+      <ul id="log"></ul>
+    </aside>
+  </div>
+
+  <script src="host.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+node_modules/
+.env
+docs/
+local/
+mock-c4c-host/
+api/
+vercel.json
+.vercel/
+*.zip

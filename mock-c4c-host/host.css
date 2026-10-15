@@ -1,0 +1,25 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font: 13px/1.4 "72", -apple-system, "Segoe UI", Arial, sans-serif; color: #1d2d3e; background: #f5f6f7; display: flex; flex-direction: column; }
+.shell { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: #354a5f; color: #fff; }
+.tag { font-size: 11px; opacity: .8; }
+.spacer { flex: 1; }
+.pill { background: #ffffff22; border-radius: 10px; padding: 2px 10px; font-size: 12px; }
+.frame { flex: 1; display: grid; grid-template-columns: 150px 1fr 260px; min-height: 0; }
+.nav { background: #fff; border-right: 1px solid #d9dee3; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.nav button { text-align: left; border: 0; background: none; padding: 8px; border-radius: 6px; cursor: pointer; font: inherit; }
+.nav button.active { background: #e8f1fb; color: #0a6ed1; font-weight: 600; }
+.content { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.controls { background: #fff; border-bottom: 1px solid #d9dee3; padding: 8px 12px; }
+.controls h2, .log h2 { font-size: 13px; margin: 0 0 6px; }
+.row { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin-bottom: 4px; }
+.muted { color: #6a7887; font-weight: 400; }
+.small { font-size: 11px; margin: 4px 0 0; }
+button#apply { font: inherit; border: 1px solid #0a6ed1; color: #0a6ed1; background: #fff; border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+.mashup { flex: 1; padding: 10px; min-height: 0; }
+.mashup-slot { height: 100%; min-height: 460px; border: 2px dashed #0a6ed1; border-radius: 6px; background: #fff; overflow: hidden; }
+.mashup-slot iframe { width: 100%; height: 100%; border: 0; display: block; }
+.log { background: #fff; border-left: 1px solid #d9dee3; padding: 10px; overflow: auto; }
+.log ul { list-style: none; margin: 0; padding: 0; font-size: 12px; }
+.log li { padding: 5px 0; border-bottom: 1px solid #eef1f3; }
+.log .ok { color: #107e3e; } .log .fail { color: #bb0000; } .log .info { color: #6a7887; }
