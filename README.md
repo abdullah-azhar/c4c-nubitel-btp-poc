@@ -73,6 +73,7 @@ top of the C4C host. Open http://localhost:8083 directly: it shows a locked scre
 npm i -D playwright && npx playwright install chromium
 CACHE_TTL_SECONDS=12 npm start   # in one terminal (short saved-copy life so expiry can be tested)
 npm test                         # in another: 66 checks, screenshots in local/screens/
+npm run test:adapter             # 21 checks of the real C4C adapter against a fake C4C (no tenant, no servers needed)
 ```
 
 On Windows PowerShell set the variable first: `$env:CACHE_TTL_SECONDS = '12'`.

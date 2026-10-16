@@ -295,6 +295,7 @@
 
     if (s === 'customer') return renderCustomer(status, data);
     if (status === 'empty' || (status === 'ok' && !data)) return setState(s, 'empty', emptyText(s));
+    if (status === 'not_configured') return setState(s, 'empty', 'Not connected to C4C yet');
     if (status !== 'ok') return setError(s, 'Could not load');
     RENDER[s](slot(s), data);
   }

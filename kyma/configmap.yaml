@@ -19,6 +19,8 @@ data:
   # C4C tenant for the OData adapter (used only when DATA_SOURCE is "c4c"). Credentials are NOT here:
   # they go in the secret c4c-odata-credentials, see docs/C4C-ODATA.md.
   C4C_BASE_URL: "https://my335945.crm.ondemand.com"
+  # Which PhoneCall field holds Nubitel's conversation ID (e.g. GroupwareItemID). Empty = find the customer by phone number only.
+  C4C_ACTIVITY_FIELD: ""
   # Lets agents create a contact or save the caller's number on a contact (unknown-caller screen).
   # Mock data only for now. Review this before switching DATA_SOURCE to "c4c".
   ALLOW_WRITES: "true"

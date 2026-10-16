@@ -1,49 +1,69 @@
-# Using real C4C data (Phase 2)
-
-The view, the server and the Nubitel side are built and tested on mock data that has
-the same shape as the real objects. What is left is the **C4C OData mapping**: which
-entity set and fields answer each question. It lives in one place, `lib/c4c-adapter.js`
-(`createC4CAdapter`), behind the same interface the mock uses, so the screens do not
-change. Until the mapping is filled in, `DATA_SOURCE=c4c` fails loudly instead of showing
-guessed data.
+# Using real C4C data
 
 Test tenant: `https://my335945.crm.ondemand.com`
 Service root: `/sap/c4c/odata/v1/c4codataapi/`
 
-## What the adapter must answer
+The real adapter (`createC4CAdapter` in `lib/c4c-adapter.js`) is written against this
+tenant's `$metadata` and data. The exact requests it builds were replayed against the
+tenant and all returned HTTP 200; `npm run test:adapter` checks the mapping logic with a
+fake C4C (21 checks). It has **not yet run end to end** because that needs the technical
+user (below). Until `DATA_SOURCE` is set to `c4c` everything runs on mock data.
 
-| Question | Used for | Called |
-|---|---|---|
-| Phone call activity by external ID, then its contact and account | Who is on the line (preferred) | `resolve` |
-| Contact(s) by phone number | Who is on the line (fallback), several contacts on one number | `resolve` |
-| Last sales order of the account | Section "Last sales order" | `getSection('order')` |
-| Open tasks of the account | Section "Open tasks" | `getSection('tasks')` |
-| Product recommendations of the account for the **current month and year** | Section "Recommended products" | `getSection('reco')` |
-| Contacts / accounts matching a typed name | Unknown-caller popups | `searchContacts`, `searchAccounts` |
-| Create a contact, save a number on a contact | Unknown-caller popups | `createContact`, `updateContactPhone` |
+## Confirmed mapping
 
-## What I need from you
+| Screen | Entity set | Query | Fields used |
+|---|---|---|---|
+| Who is calling (by phone) | `ContactCollection` | `NormalisedMobile eq '+60…'`, and separately `NormalisedPhone eq '+60…'` | ContactID, Name, AccountID, AccountFormattedName, ContactOwnerID |
+| Owner name | `EmployeeBasicDataCollection` | `EmployeeID eq '<ContactOwnerID>'` | FormattedName |
+| Who is calling (by activity) | `PhoneCallCollection` | `<C4C_ACTIVITY_FIELD> eq '<external ID>'` | MainContactPartyID (= ContactID) |
+| Last sales order | `CustomerOrderCollection` | `BuyerPartyID eq '<AccountID>'`, `$orderby=DateTime desc`, `$top=1` | ID, DateTime, NetAmount, NetAmountCurrencyCode, OrderExternalLifeCycleStatusCodeText |
+| Open tasks | `TasksCollection` | `MainAccountPartyID eq '<AccountID>' and (Status eq '1' or Status eq '2')`, `$orderby=DueDateTime asc`, `$inlinecount=allpages` | ID, Subject, DueDateTime, StatusText, PriorityCode |
+| Search contacts | `ContactCollection` | `substringof('<text>',Name)` and `substringof('<text>',AccountFormattedName)` | as above |
+| Search accounts | `CorporateAccountCollection` | `substringof('<text>',Name)` | AccountID, Name |
+| Save number / create contact | `ContactCollection` | PATCH `Mobile` (or `Phone` if Mobile is taken), POST new contact | not yet tried, see below |
 
-1. **The OData metadata.** While signed in to C4C, open
-   `https://my335945.crm.ondemand.com/sap/c4c/odata/v1/c4codataapi/$metadata`, save the
-   page as `docs/odata/c4c-metadata.xml` in the project folder and tell me. It has no
-   secrets. If the recommendation snapshot is a **custom** object, also its own
-   service's `$metadata` (custom OData services live under `/sap/c4c/odata/cust/v1/`).
-2. **The recommendation snapshot**: which entity holds it, how it links to the account
-   (and contact), and which fields are the year, the month, the product, the quantity,
-   the unit and (if any) a reason.
-3. **The phone call activity's external ID**: the field Nubitel writes its conversation
-   ID into.
-4. **Sample links.** In C4C open one account, contact, sales order and task, and paste
-   me each address from the browser bar. I use them to set the open-in-C4C icons exactly.
-5. **A technical user** (see below) with the minimum rights.
+Account, contact, order and task all join on the same 9-digit **AccountID**
+(`BuyerPartyID` on orders, `MainAccountPartyID` on tasks).
+
+## What we learned about this tenant
+
+* **Phone numbers are stored as `+` and digits, no spaces** (`NormalisedMobile`,
+  `NormalisedPhone`, for example `+60199999999`). The adapter converts the caller's number
+  to that form. In a sample of 200 contacts **only 1 had any phone number**. Expect most
+  callers to be "unknown" until numbers are added, which makes the unknown-caller screen the
+  common path, not the exception.
+* **C4C rejects `A or B` across two different fields** (error "Operands of logical
+  operator '' are not valid"). Phone and name searches therefore run as two small
+  queries and are merged. `or` on one field works.
+* Task status codes: 1 Open, 2 In Process, 3 Completed, 4 Canceled. Priority: 1 Immediate,
+  2 Urgent, 3 Normal, 7 Low. Dates arrive as `/Date(ms)/` and are shown in Malaysia time.
+* `substringof` is case-insensitive. The owner name does not come through `$expand`, so it
+  is a separate lookup (best effort: a missing owner never breaks the screen).
+* Phone call activities have **no `ExternalID` field**.
+
+## Still needed
+
+1. **The monthly recommendations.** Nothing in this service holds product recommendations
+   for a month and year. The only related fields are on quote items
+   (`KUT_Recommendation_ID_KUT`, `KUT_RecommendationType_KUT`). Is it a custom business
+   object with its own OData service (`/sap/c4c/odata/cust/v1/<service>/`), a report, or
+   data in another system? Send me where it lives and which fields hold the account, year,
+   month, product, quantity and unit. Until then the section shows "Not connected to C4C yet".
+2. **Where Nubitel stores its conversation ID on the phone call activity.** There is no
+   `ExternalID`. Candidates: `GroupwareItemID` (filled on about half the calls in the
+   test tenant and filterable), the activity's own `ID` (if Nubitel passes C4C's ID
+   back), or a custom field. Put the field name in `C4C_ACTIVITY_FIELD`. Without it
+   the view uses the phone number only.
+3. **Sample links** for an account, contact, sales order and task (copy from the browser
+   bar) to set the open-in-C4C icons exactly.
+4. **A technical user** (below).
 
 ## Technical user and credentials
 
 Create a dedicated C4C user for the OData calls: **read** access to accounts, contacts,
-sales orders, activities/tasks and the recommendation snapshot. Give **write** access
-(contacts only) only if agents may create or update contacts from the unknown-caller
-screen. Do not reuse a person's login.
+sales orders, tasks, phone calls and employees. Give **write** access (contacts only) only
+if agents may create or update contacts from the unknown-caller screen. Do not reuse a
+person's login.
 
 Put the credentials into Kyma yourself, so they never pass through a chat or a file.
 In PowerShell (the password prompt does not echo and is not kept in your history):
@@ -61,25 +81,17 @@ recreating the secret, then `kubectl rollout restart deploy/c4c-lean-view -n c4c
 
 ## Switching from mock to C4C
 
-1. Fill in the mapping (below), run `npm test` (mock) and a few manual tests with
-   `DATA_SOURCE=c4c` locally against the test tenant.
-2. In `kyma/configmap.yaml` set `DATA_SOURCE: "c4c"`, apply, restart the pod.
-3. Decide `ALLOW_WRITES` on purpose. `true` lets agents change real C4C contacts.
-4. Roll back by setting `DATA_SOURCE: "mock"` again.
+1. Create the secret above and set `C4C_ACTIVITY_FIELD` in `kyma/configmap.yaml` if you
+   know the field.
+2. Set `DATA_SOURCE: "c4c"` in the ConfigMap, `kubectl apply -k kyma/`, restart the pod.
+3. Test with a customer whose number is saved in C4C, a number that is not, and one that
+   has open tasks and orders. Watch the pod log (`[audit]` lines, phone numbers masked).
+4. Decide `ALLOW_WRITES` on purpose. `true` lets agents change real C4C contacts. The write
+   calls (create contact, save number) are written but **not yet tried against the
+   tenant**: the property names for create (`AccountID`, `Email`) and the PATCH
+   headers need a first real test, ideally on a throwaway contact.
+5. Roll back by setting `DATA_SOURCE: "mock"` again.
 
-## Mapping to fill in from `$metadata`
-
-| Section | Entity set | Filter | Fields shown |
-|---|---|---|---|
-| Phone call activity | TBD | external ID = `ext` claim | contact ID, account ID |
-| Contact by phone | TBD | normalised phone (mobile or phone) | contact ID, name, account ID and name, owner |
-| Last sales order | TBD | account ID, `$orderby` date desc, `$top=1` | ID, date, status text, net amount + currency |
-| Open tasks | TBD | account ID, status not completed | ID, subject, due date, priority, status |
-| Recommendations | TBD | account ID, year = this year, month = this month | product, quantity, unit, reason |
-
-Query rules: always `$select` only what is shown, `$top` the rows needed, no `$expand`,
-one small call per section (they run in parallel). The current month is computed in
-`Asia/Kuala_Lumpur` (`lib/period.js`), not in the server's time zone.
-
-C4C stores phone numbers in many formats. Decide how the lookup matches: a normalised
-extension field in C4C is the most reliable; otherwise match several formats.
+C4C stores phone numbers in many formats. If your callers' numbers are saved in a different
+form from `+60…`, the lookup will miss them: a normalised field filled by a workflow or
+a data clean-up is the most reliable fix.
