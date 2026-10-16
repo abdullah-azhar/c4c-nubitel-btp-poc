@@ -1,6 +1,6 @@
 {
   "name": "c4c-nubitel-btp-poc",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "description": "POC: Nubitel embedded in SAP C4C, with a SAP BTP lean customer view embedded in Nubitel",
   "engines": { "node": ">=18" },
@@ -9,6 +9,8 @@
     "start:view": "node btp-view/server.js",
     "start:nubitel": "node mock-nubitel/server.js",
     "test": "node local/selftest.js",
-    "test:adapter": "node local/adapter-test.js"
+    "test:adapter": "node local/adapter-test.js",
+    "test:links": "node local/links-test.js",
+    "check:c4c": "node local/check-c4c-access.js"
   }
 }

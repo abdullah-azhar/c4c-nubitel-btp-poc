@@ -14,7 +14,7 @@ const secret = process.env.TOKEN_SECRET || 'poc-only-change-me';
 const base = { ...process.env, TOKEN_SECRET: secret };
 
 // SHOW_DIAGNOSTICS and ALLOW_WRITES are on for local testing only (writes go to the mock data).
-require('../btp-view/server').start({ ...base, PORT: 8083, MESSAGE_ORIGINS: 'http://localhost:8082', FRAME_ANCESTORS: 'http://localhost:8082,http://localhost:8081', SHOW_DIAGNOSTICS: 'true', ALLOW_WRITES: 'true' });
+require('../btp-view/server').start({ ...base, PORT: 8083, MESSAGE_ORIGINS: 'http://localhost:8082', FRAME_ANCESTORS: 'http://localhost:8082,http://localhost:8081', SHOW_DIAGNOSTICS: 'true', ALLOW_WRITES: process.env.ALLOW_WRITES || 'true' });
 // Local demo sign-in only (these users exist nowhere else): james.theng and nur.aina, password "local-demo-only".
 // ALLOW_TEST_HOOKS lets the test suite shorten a session to test the idle timeout.
 const DEMO_USERS = JSON.stringify([

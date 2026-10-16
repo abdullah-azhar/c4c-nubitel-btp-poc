@@ -9,8 +9,11 @@ GitHub (private repo) --Actions--> ghcr.io image --pulled by--> Kyma cluster
    https://c4c-lean-view.<cluster-domain>/   <--APIRule--  Service -> Pod
 ```
 
-Keep `DATA_SOURCE=mock`. A trial account is not company-controlled: no real
-customer data and no C4C technical-user password here.
+`DATA_SOURCE` starts as `mock`. A trial account is not company-controlled: **no real
+customer data and no production C4C credentials here.** The one exception is a
+**read-only technical user of the test tenant** (test data only), which is how the view
+is tried on real C4C data: see `docs/C4C-ODATA.md` for the user, the secret and the
+switch.
 
 ## What is in the repo
 

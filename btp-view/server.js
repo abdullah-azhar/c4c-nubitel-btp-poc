@@ -21,8 +21,8 @@
  *   FRAME_ANCESTORS           origins allowed to frame the view: Nubitel AND C4C
  *   TOKEN_SECRET              shared secret with Nubitel
  *   C4C_UI_URL                C4C tenant URL, for "open in C4C" links
- *   C4C_LINK_TEMPLATE         optional; {base} {type} {id}.  C4C_TYPE_ACCOUNT|CONTACT|ORDER|TASK
- *                             set the thing type per object; C4C_LINK_<OBJECT> overrides a whole link
+ *   C4C_LINK_BASE             optional: the sign-in part of those links (default has saml2=disabled,
+ *                             right for user/password tenants; drop it for single sign-on)
  *   SECTION_TIMEOUT_MS        default 6000
  *   CACHE_TTL_SECONDS         how long the page reuses what it loaded (default 300, 0 = off)
  *   ALLOW_WRITES              "true" lets the view create/update contacts (default off)
@@ -35,6 +35,7 @@ const path = require('path');
 const { createAdapter, SECTIONS } = require('../lib/c4c-adapter');
 const token = require('../lib/token');
 const { maskPhone, normalisePhone } = require('../lib/phone');
+const { defaultLinks } = require('../lib/c4c-links');
 const { serveStatic, send, readJson, list } = require('../lib/http-util');
 
 const CALL_BUDGET = 80;            // data calls one token may make (typing in search counts)
@@ -62,19 +63,9 @@ function start(env = process.env) {
   const ttlSeconds = env.CACHE_TTL_SECONDS === undefined || env.CACHE_TTL_SECONDS === '' ? 300 : Number(env.CACHE_TTL_SECONDS);
   const CACHE_TTL_MS = Number.isFinite(ttlSeconds) && ttlSeconds >= 0 ? Math.round(ttlSeconds * 1000) : 300000;
 
-  // "Open in C4C" links per object. TODO confirm the thing types for your C4C release:
-  // open each object in C4C, copy the URL from the browser and compare.
-  const LINK_TEMPLATE = env.C4C_LINK_TEMPLATE ||
-    '{base}/sap/public/byd/runtime?bo_ns=http://sap.com/thingTypes&bo=COD_GENERIC&node=Root&operation=OnExtInspect&param.Type={type}&param.InternalID={id}&sapbyd-agent=TAB';
-  const THING_TYPES = {
-    account: env.C4C_TYPE_ACCOUNT || 'COD_ACCOUNT_TT',
-    contact: env.C4C_TYPE_CONTACT || 'COD_CONTACT_TT',
-    order: env.C4C_TYPE_ORDER || 'COD_SALES_ORDER_TT',
-    task: env.C4C_TYPE_TASK || 'COD_TASK_TT',
-  };
-  const LINKS = Object.fromEntries(Object.entries(THING_TYPES).map(([k, type]) => [
-    k, (env['C4C_LINK_' + k.toUpperCase()] || LINK_TEMPLATE).replace('{base}', C4C_UI_URL).replace('{type}', type),
-  ]));
+  // "Open in C4C" links: which screen each object opens and by which ID (see lib/c4c-links.js, taken from real
+  // links of the test tenant). The page builds the address; C4C_LINK_BASE replaces the sign-in part of it.
+  const LINKS = defaultLinks(C4C_UI_URL, env.C4C_LINK_BASE);
 
   if (SECRET === 'poc-only-change-me') console.warn('[btp-view] TOKEN_SECRET not set: using POC default. Never use this outside local testing.');
   if (ALLOW_WRITES && adapter.source === 'c4c') console.warn('[btp-view] ALLOW_WRITES=true with DATA_SOURCE=c4c: agents can change real C4C contacts.');

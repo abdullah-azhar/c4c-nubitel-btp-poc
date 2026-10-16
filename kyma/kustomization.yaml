@@ -12,4 +12,4 @@ resources:
 images:
   - name: c4c-lean-view
     newName: ghcr.io/abdullah-azhar/c4c-lean-view
-    newTag: "0.2.3"
+    newTag: "0.2.4"

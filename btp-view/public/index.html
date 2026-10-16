@@ -80,6 +80,8 @@
             <span><b>Create a new contact</b><small>Add a new contact person for this number</small></span>
           </button>
         </div>
+        <!-- Shown instead of the two options being usable when the environment is read-only (ALLOW_WRITES off) -->
+        <p id="unkOff" class="hint unk-off" hidden>Saving contacts is turned off in this environment. Add this number to the contact in C4C.</p>
       </section>
     </main>
 
@@ -104,6 +106,7 @@
     </footer>
   </div>
 
+  <script src="c4c-links.js"></script>
   <script src="view.js"></script>
 </body>
 </html>

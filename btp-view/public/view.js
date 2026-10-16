@@ -300,13 +300,16 @@
     RENDER[s](slot(s), data);
   }
 
-  function openLink(kind, id, label) {
+  // Icon that opens the object in C4C in a new tab. ref is the ID that kind needs (account and task: their UUID).
+  // Without a usable ID there is no icon at all, rather than one that goes nowhere.
+  function openLink(kind, ref, label) {
+    const href = window.C4CLinks && CFG.links && CFG.links.base ? window.C4CLinks.build(CFG.links.base, CFG.links[kind], ref) : '';
+    if (!href) return el('span', 'icon-slot');
     const a = el('a', 'icon-link');
-    const tpl = CFG.links[kind];
-    if (tpl) { a.href = tpl.replace('{id}', encodeURIComponent(id)); a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+    a.href = href; a.target = '_blank'; a.rel = 'noopener noreferrer';
     a.title = label; a.setAttribute('aria-label', label);
     a.append(ic('open'));
-    a.addEventListener('click', () => post({ type: 'view.action', action: 'openInC4C', object: kind, id, conversationId: current && current.cid }));
+    a.addEventListener('click', () => post({ type: 'view.action', action: 'openInC4C', object: kind, id: String(ref), conversationId: current && current.cid }));
     return a;
   }
 
@@ -317,7 +320,7 @@
       const line = el('div', 'cust-line');
       line.append(el('p', 'cust-name', data.name), openLink('contact', data.contactId, 'Open contact in C4C'));
       const sub = el('div', 'cust-sub');
-      sub.append(el('span', null, data.account), openLink('account', data.accountId, 'Open account in C4C'));
+      sub.append(el('span', null, data.account), openLink('account', data.accountUuid, 'Open account in C4C'));
       if (data.owner) sub.append(el('span', 'sep', '·'), el('span', null, 'Owner: ' + data.owner));
       box.append(line, sub);
       return;
@@ -378,7 +381,7 @@
         const li = el('li', 'task');
         const due = dueText(t.due);
         const subj = el('span', 't-subj', t.subject); subj.title = t.subject;
-        li.append(el('span', 'dot ' + String(t.priority || '').toLowerCase()), subj, el('span', 't-due' + (due.overdue ? ' overdue' : ''), due.text), openLink('task', t.id, 'Open task in C4C'));
+        li.append(el('span', 'dot ' + String(t.priority || '').toLowerCase()), subj, el('span', 't-due' + (due.overdue ? ' overdue' : ''), due.text), openLink('task', t.uuid, 'Open task in C4C'));
         ul.append(li);
       });
       box.replaceChildren(ul);
@@ -433,6 +436,9 @@
     current.pending = new Set();
     current.unknown = { phone: phone || '' };
     $('#unkPhone').textContent = phone || 'This number';
+    // A read-only environment says so up front, instead of after the agent has filled in a form that cannot be saved.
+    const readOnly = !CFG.writesEnabled;
+    $('#chooseExisting').disabled = readOnly; $('#chooseNew').disabled = readOnly; $('#unkOff').hidden = !readOnly;
     show('unknown');
     updateAll();
   }

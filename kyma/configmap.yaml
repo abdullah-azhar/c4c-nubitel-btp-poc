@@ -19,18 +19,19 @@ data:
   # C4C tenant for the OData adapter (used only when DATA_SOURCE is "c4c"). Credentials are NOT here:
   # they go in the secret c4c-odata-credentials, see docs/C4C-ODATA.md.
   C4C_BASE_URL: "https://my335945.crm.ondemand.com"
-  # Which PhoneCall field holds Nubitel's conversation ID (e.g. GroupwareItemID). Empty = find the customer by phone number only.
-  C4C_ACTIVITY_FIELD: ""
+  # Nubitel sends the External ID of the conversation = the ID of its C4C phone call activity.
+  # This is the PhoneCall field it is matched on: "ID" is the activity ID shown in C4C. Empty = find the customer by phone number only.
+  # If the activity is not found, the view falls back to the phone number by itself.
+  C4C_ACTIVITY_FIELD: "ID"
   # Recommendations are this month's snapshot. The test tenant has no snapshot for the current month, so for testing
   # show the newest earlier one, labelled "(latest available)". Set to "false" to show only the current month.
   C4C_RECO_FALLBACK_LATEST: "true"
   # Lets agents create a contact or save the caller's number on a contact (unknown-caller screen).
   # Mock data only for now. Review this before switching DATA_SOURCE to "c4c".
   ALLOW_WRITES: "true"
-  # Thing type used for each open-in-C4C icon link. TODO confirm per object: open it in C4C and compare the URL.
-  C4C_TYPE_ACCOUNT: "COD_ACCOUNT_TT"
-  C4C_TYPE_CONTACT: "COD_CONTACT_TT"
-  C4C_TYPE_ORDER: "COD_SALES_ORDER_TT"
-  C4C_TYPE_TASK: "COD_TASK_TT"
+  # The open-in-C4C icons build their links from C4C_UI_URL (account, contact, sales order and task, copied from real C4C links).
+  # Only for a tenant that signs in with single sign-on: set C4C_LINK_BASE to the part of a real C4C link before the "#",
+  # without saml2=disabled. Leave unset for the test tenant.
+  # C4C_LINK_BASE: ""
   # Timing footer for testing. Leave off for agents.
   SHOW_DIAGNOSTICS: "false"

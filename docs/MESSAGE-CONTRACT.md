@@ -97,7 +97,7 @@ payload = { cid, phone, ext, agent, iat, exp, jti }      exp - iat <= 60 seconds
 |---|---|
 | `cid` | Nubitel's conversation ID |
 | `phone` | The caller's number as received. C4C lookup normalises it (`lib/phone.js`). |
-| `ext` | **External ID of the C4C phone call activity** for this conversation. Optional but recommended: the activity already points to the right contact, so a number shared by several contacts is not ambiguous. |
+| `ext` | **External ID of the C4C phone call activity** for this conversation: the activity's ID as shown in C4C (for example `4100234`), as a string. Optional but recommended: the activity already points to the right contact, so a number shared by several contacts is not ambiguous. If no activity has that ID, or it has no contact, the view falls back to `phone` by itself. |
 | `agent` | The agent's ID, for the audit log |
 | `iat`, `exp`, `jti` | Issued-at, expiry (at most 60 s later), unique ID |
 
@@ -128,8 +128,9 @@ behave when it runs **inside a C4C iframe**, which is where sign-in usually brea
 
 ## What the view asks C4C
 
-1. **Who is on the line:** the phone call activity by `ext` first (when present),
-   then the contact by phone number.
+1. **Who is on the line:** the phone call activity by `ext` first (when present; its
+   contact is the caller), then the contact by phone number. Details and the C4C access this
+   needs: `docs/C4C-ODATA.md`.
 2. **Then, in parallel and each on its own:** the account's **last sales order**,
    its **open tasks**, and the **product recommendations of the current month and
    year** (the monthly snapshot, in the sales team's time zone).

@@ -63,6 +63,32 @@ function fake(handlers) {
   const act = t.log.find((c) => c.path === 'PhoneCallCollection');
   check('With the activity field set, the activity finds the contact first', r.via === 'activity' && r.data.contactId === '1001' && act.params.$filter === "GroupwareItemID eq 'NUB''1'", act.params.$filter);
 
+  // The contact carries the account's UUID (the "open account" link needs it)
+  t = fake([(m, p, q) => (p === 'ContactCollection' && /NormalisedMobile/.test(q.$filter) ? { results: [{ ...CONTACT, AccountUUID: '00163e4d-6601-1ee8-9c8a-07a41342db33' }] } : undefined)]);
+  r = await createC4CAdapter({}, t).resolve({ phone: '+60 8347 2856' });
+  check('The customer carries the account UUID for the open-in-C4C link', r.status === 'ok' && r.data.accountUuid === '00163e4d-6601-1ee8-9c8a-07a41342db33');
+  check('The contact query asks for AccountUUID', /AccountUUID/.test(t.log.find((c) => c.path === 'ContactCollection').params.$select));
+
+  // The real transport, with fetch replaced so nothing leaves this computer: which address and which field are used
+  {
+    const { createAdapter } = require('../lib/c4c-adapter');
+    const urls = []; const realFetch = global.fetch;
+    global.fetch = async (url, opts) => { urls.push({ url: String(url), auth: !!(opts && opts.headers && opts.headers.Authorization) }); return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ d: { results: [] } }) }; };
+    try {
+      const base = { DATA_SOURCE: 'c4c', C4C_BASE_URL: 'https://t.example/', C4C_USER: 'u', C4C_PASSWORD: 'p' };
+      await createAdapter(base).resolve({ phone: '+60 8347 2856', externalId: '4100234' });
+      const first = urls[0];
+      check('By default the activity is looked up by its ID (what Nubitel calls its External ID)', /PhoneCallCollection\?/.test(first.url) && decodeURIComponent(first.url).includes("$filter=ID eq '4100234'") && first.url.startsWith('https://t.example/sap/c4c/odata/v1/c4codataapi/'), decodeURIComponent(first.url).slice(0, 110));
+      check('Requests carry basic-auth credentials and ask for JSON', first.auth && /%24format=json|\$format=json/.test(first.url));
+      urls.length = 0;
+      await createAdapter({ ...base, C4C_ACTIVITY_FIELD: '' }).resolve({ phone: '+60 8347 2856', externalId: '4100234' });
+      check('C4C_ACTIVITY_FIELD="" turns the activity lookup off (phone number only)', !urls.some((u) => /PhoneCallCollection/.test(u.url)));
+      urls.length = 0;
+      await createAdapter(base).getSection('reco', { accountId: '900000001' });
+      check('Recommendations go to the custom service, everything else to the standard one', urls.some((u) => u.url.startsWith('https://t.example/sap/c4c/odata/cust/v1/duopharma_snapshotproductrecommendation/SnapshotProdRecCollection')));
+    } finally { global.fetch = realFetch; }
+  }
+
   // --- sections ---
   t = fake([(m, p) => p === 'CustomerOrderCollection' ? { results: [{ ID: '8000001', DateTime: MS('2026-10-04T10:00:00Z'), NetAmount: '2150.5', NetAmountCurrencyCode: 'MYR', OrderExternalLifeCycleStatusCodeText: 'In Process' }] } : undefined]);
   r = await createC4CAdapter({}, t).getSection('order', { accountId: '900000001', contactId: '1001' });
@@ -76,13 +102,14 @@ function fake(handlers) {
   check('A contact without an account gives "empty" without calling C4C', r.status === 'empty');
 
   t = fake([(m, p) => p === 'TasksCollection' ? { __count: '7', results: [
-    { ID: '301', Subject: 'Call back', DueDateTime: MS('2026-10-14T16:00:00Z'), StatusText: 'Open', PriorityCode: '2' },
-    { ID: '302', Subject: 'Send list', DueDateTime: MS('2026-10-20T16:00:00Z'), StatusText: 'In Process', PriorityCode: '3' },
-    { ID: '303', Subject: 'Low one', DueDateTime: MS('2026-10-25T16:00:00Z'), StatusText: 'Open', PriorityCode: '7' },
+    { ID: '301', UUID: 'e1c764eb-8bbd-1eef-9dad-70e8913c9a61', Subject: 'Call back', DueDateTime: MS('2026-10-14T16:00:00Z'), StatusText: 'Open', PriorityCode: '2' },
+    { ID: '302', UUID: 'e1c764eb-8bbd-1eef-9dad-70e8913c9a62', Subject: 'Send list', DueDateTime: MS('2026-10-20T16:00:00Z'), StatusText: 'In Process', PriorityCode: '3' },
+    { ID: '303', UUID: '', Subject: 'Low one', DueDateTime: MS('2026-10-25T16:00:00Z'), StatusText: 'Open', PriorityCode: '7' },
   ] } : undefined]);
   r = await createC4CAdapter({}, t).getSection('tasks', { accountId: '900000001' });
   const tq = t.log[0].params;
   check('Open tasks: total comes from C4C, priorities mapped, dates in Malaysia time', r.status === 'ok' && r.data.count === 7 && r.data.items.length === 3 && r.data.items[0].priority === 'High' && r.data.items[1].priority === 'Normal' && r.data.items[2].priority === 'Low' && r.data.items[0].due === '2026-10-15', JSON.stringify(r.data.items.map((i) => i.due + '/' + i.priority)));
+  check('Each task carries its UUID for the open-task link (blank if C4C gave none)', r.data.items[0].uuid === 'e1c764eb-8bbd-1eef-9dad-70e8913c9a61' && r.data.items[2].uuid === '' && /UUID/.test(tq.$select));
   check('Open tasks query: status Open or In Process only, soonest due first, counted', /MainAccountPartyID eq '900000001' and \(Status eq '1' or Status eq '2'\)/.test(tq.$filter) && tq.$orderby === 'DueDateTime asc' && tq.$inlinecount === 'allpages');
 
   // --- recommendations: the custom monthly snapshot ---
@@ -161,6 +188,46 @@ function fake(handlers) {
   const created = await createC4CAdapter({}, t).createContact({ firstName: 'Ivy', lastName: 'Tester', accountId: '900000001', email: 'ivy@example.com', phone: '018-222 9999' });
   w = t.log.find((c) => c.method === 'POST');
   check('Creating a contact sends name, account, email and the call number', w && w.path === 'ContactCollection' && w.body.LastName === 'Tester' && w.body.AccountID === '900000001' && w.body.Mobile === '+60182229999' && w.body.Email === 'ivy@example.com' && created.contactId === '1500');
+
+  // --- the access check the C4C administrator runs (npm run check:c4c) ---
+  {
+    const { runChecks, diagnose } = require('./check-c4c-access');
+    const hdr = (map) => ({ get: (k) => map[k.toLowerCase()] || null });
+    const json = { status: 200, headers: hdr({ 'content-type': 'application/json' }) };
+    const seen = [];
+    const fakeFetch = (rules) => async (url, opts) => {
+      seen.push({ url, auth: opts.headers.Authorization });
+      for (const [re, res] of rules) if (re.test(url)) { if (res instanceof Error) throw res; return res; }
+      return json;
+    };
+    let res = await runChecks({ baseUrl: 'https://t.example/', user: 'svc', password: 'pw-secret', fetchImpl: fakeFetch([]) });
+    check('Access check: every object the view reads is tested, and all pass when C4C answers with data', res.filter((x) => !x.info).length === 9 && res.filter((x) => !x.info).every((x) => x.ok), `${res.length} results`);
+    res = await runChecks({
+      baseUrl: 'https://t.example', user: 'svc', password: 'pw-secret',
+      fetchImpl: fakeFetch([
+        [/TasksCollection/, { status: 403, headers: hdr({}) }],
+        [/CustomerOrderCollection/, { status: 401, headers: hdr({}) }],
+        [/SnapshotProdRecCollection/, { status: 404, headers: hdr({}) }],
+        [/ProductCollection/, { status: 200, headers: hdr({ 'content-type': 'text/html' }) }],
+        [/EmployeeBasicDataCollection/, Object.assign(new Error('x'), { cause: { code: 'ENOTFOUND' } })],
+      ]),
+    });
+    const by = (n) => res.find((x) => x.name === n);
+    check('Access check explains each failure: no right (403), bad login (401), service missing (404), logon page instead of data, no connection',
+      !by('Tasks').ok && /business role/.test(by('Tasks').note) && /not accepted/.test(by('Sales orders').note) && /not found/.test(by('Recommendation snapshot').note) && /web page/.test(by('Products').note) && /could not connect \(ENOTFOUND\)/.test(by('Employees').note));
+    check('Access check keeps going after a failure and still passes the rest', by('Contacts').ok && by('Accounts').ok && by('Phone calls').ok);
+    check('Access check sends the login only in the Authorization header, never in an address', seen.every((s) => !s.url.includes('pw-secret') && !s.url.includes('svc') && /^Basic /.test(s.auth)));
+    check('Access check output has no customer data or password', !JSON.stringify(res).includes('pw-secret') && res.every((x) => !('body' in x) && !('d' in x)));
+
+    const mixed = res;
+    const tokenRow = (r) => r.find((x) => /^Write token/.test(x.name));
+    res = await runChecks({ baseUrl: 'https://t.example', user: 'svc', password: 'pw-secret', fetchImpl: fakeFetch([[/c4codataapi\/$/, { status: 200, headers: hdr({ 'content-type': 'application/json', 'x-csrf-token': 'abc' }) }]]) });
+    check('Access check: the write-token row is information only and says so when C4C hands out a token', tokenRow(res).info && tokenRow(res).ok && /issues a token/.test(tokenRow(res).note));
+    res = await runChecks({ baseUrl: 'https://t.example', user: 'svc', password: 'pw-secret', fetchImpl: fakeFetch([[/./, { status: 200, headers: hdr({ 'content-type': 'text/html' }) }]]) });
+    check('Access check: a logon page is never reported as a working write token', !tokenRow(res).ok && !/issues a token/.test(tokenRow(res).note));
+    check('Access check: when every object fails the same way it says the sign-in is the problem, not the access rights', /signing in, not about access rights/.test(diagnose(res)));
+    check('Access check: a mix of results gives no sign-in diagnosis', diagnose(mixed) === '');
+  }
 
   // Replay list: the GET requests, so they can be run against a tenant
   if (process.argv.includes('--print')) {

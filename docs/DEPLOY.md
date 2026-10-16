@@ -7,8 +7,10 @@ Vercel, then come back and give the BTP view the Vercel URL.
 > BTP view (container image, `kyma/` manifests). Sections 3 and 5 of this guide
 > (Vercel and the C4C mashup) stay the same.
 
-Keep `DATA_SOURCE=mock` on both. Personal Vercel and BTP trial accounts are not
-company-controlled: no C4C credentials or real customer data there.
+Personal Vercel and BTP trial accounts are not company-controlled: **no production C4C
+credentials and no real customer data there.** The mock Nubitel on Vercel never needs C4C
+credentials (`DATA_SOURCE=mock`). The BTP view starts on mock data too; trying it on the
+C4C **test tenant** uses a read-only technical user with test data only (`docs/C4C-ODATA.md`).
 
 ---
 

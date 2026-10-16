@@ -87,7 +87,7 @@ const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); c
   check('The session survives a reload of Nubitel (no second sign-in)', (await nb.locator('#login').isHidden()) && (await nb.locator('#convList li').count()) === 7);
   const spoof = await post('token', { cid: 'conv-2294', phone: 'EVIL', agent: 'someone-else' });
   const claims = JSON.parse(Buffer.from(spoof.json.token.split('.')[0], 'base64url').toString('utf8'));
-  check('Token identity comes from the session and the server record, not the browser', claims.agent === 'james.theng' && claims.phone === '+60 8347 2856' && claims.ext === 'NUB-CALL-100234', JSON.stringify({ agent: claims.agent, phone: claims.phone }));
+  check('Token identity comes from the session and the server record, not the browser', claims.agent === 'james.theng' && claims.phone === '+60 8347 2856' && claims.ext === '4100234', JSON.stringify({ agent: claims.agent, phone: claims.phone }));
 
   // 2. The link is not public: opened directly it is locked
   const direct = await browser.newPage();
@@ -144,8 +144,12 @@ const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); c
   const body = await view.locator('body').boundingBox();
   check('Refresh is an icon in the top bar, top right, not in the customer header', inBar === 1 && inCust === 0 && btn.x + btn.width > body.x + body.width - 30 && btn.y - body.y < 40, `x=${Math.round(btn.x - body.x)} of ${Math.round(body.width)}`);
   const links = await view.locator('a.icon-link').evaluateAll((as) => as.map((a) => ({ label: a.getAttribute('aria-label') || '', href: a.href })));
-  const kinds = ['contact', 'account', 'order', 'task'];
-  check('Contact, account, order and task each have an open-in-C4C icon link', kinds.every((k) => links.some((l) => l.label.toLowerCase().includes(k) && /InternalID=/.test(l.href))), `${links.length} links`);
+  // Each href is a real C4C navigation address: .../clogin?...#Nav/1/<base64 of a JSON navigation key>
+  const decode = (href) => { const m = /#Nav\/1\/(.+)$/.exec(href); try { return m ? JSON.parse(Buffer.from(m[1], 'base64').toString('utf8')) : null; } catch (e) { return null; } };
+  const target = { contact: '/Contact/UI/COD_Contact_TI', account: '/Account/UI/COD_Account_TI', order: '/SalesOrder/UI/COD_SALESORDER_TI', task: '/Task/UI/COD_Task.TI' };
+  const keyHas = { contact: '<InternalID>2000456</InternalID>', account: '<UUID>00163E4D66011EE89C8A', order: '<ID>SO-4', task: '<TaskUUID>E1C764EB8BBD1EEF9DAD' };
+  const good = Object.keys(target).every((k) => links.some((l) => { const j = l.label.toLowerCase().includes(k) && decode(l.href); return j && j.inPort === 'Inspect' && j.target.includes(target[k]) && j.thingparams.Key.includes(keyHas[k]) && /^[0-9a-f]{32}$/.test(j.winId) && l.href.startsWith('https://') && l.href.includes('/sap/ap/ui/clogin?'); }));
+  check('Contact, account, order and task each have an open-in-C4C icon with a real C4C navigation link (right screen, right ID)', good, `${links.length} links`);
   check('Open-in-C4C controls are icons (no text buttons)', (await view.locator('#openC4C').count()) === 0);
 
   // 4. One failing section does not block the others

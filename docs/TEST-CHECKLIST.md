@@ -34,6 +34,7 @@ Record: Pass / Fail / Notes.
 | L23 | Reload the page, or choose "rebuilt (reloads Nubitel)" and click Accounts | Still signed in; no second sign-in. | |
 | L24 | Open a customer, then press **Sign out** | Back to the sign-in card; the view is empty and its saved customers are gone (footer "0 saved"). | |
 | L25 | Leave the session idle past its limit, then click | Returns to sign-in with "Your session expired". | |
+| L26 | Start with writes off (`ALLOW_WRITES=false npm start`, PowerShell: `$env:ALLOW_WRITES = 'false'`), click **+60 11-5555 0000** | Both options are greyed out and a note says saving contacts is turned off. Not covered by `npm test`, which runs with writes on. | |
 
 ## Stage 2: real C4C tenant (the decisive tests)
 
@@ -49,16 +50,22 @@ the mock Nubitel URL to C4C as a mashup. Later, repeat with the real Nubitel.
 | C5 | Navigation keeps Nubitel alive | Start a call or chat, move between C4C screens and back | Call and chat continue; Nubitel does not reload. | |
 | C6 | Section loading on real C4C data | Set `DATA_SOURCE=c4c`, open chats for real test customers | Customer first, sections fill independently; note timings from the view's footer. | |
 | C7 | Phone format | Test numbers stored in different formats in C4C | All found. | |
-| C8 | Open in C4C | Click the button | Opens the right account in a new C4C tab. | |
+| C8 | Open in C4C | Click each icon: contact, account, last sales order, task | Each opens the right object in a new C4C tab (C4C asks to sign in first if the agent is not). | |
 | C9 | Narrow pane | Resize the mashup pane / browser window | View stays readable; tiles wrap. | |
 | C10 | Session timeout | Leave idle past C4C and Nubitel timeouts | Clear sign-in prompt, no silent blank panel. | |
 | C11 | Sign-in inside the C4C mashup | Open the mock Nubitel in C4C, sign in (Chrome, then Edge, then Safari) | Signed in and stays signed in. If the sign-in card says the browser blocked the cookie, note which browser: that is the third-party cookie risk. | |
 | C12 | Session survives C4C navigation and reload | Sign in, move between C4C screens, reload C4C | Still signed in, no second sign-in. | |
 | C13 | Sign out clears the view | Open a customer, press **Sign out** | Sign-in card shows and the view is empty. Sign in again and open the same customer: it loads from C4C again. | |
+| C14 | Technical user | `npm run check:c4c` with the technical user | `9/9 objects readable`, every line PASS. A FAIL line says which right is missing (`docs/C4C-ODATA.md` 1.6). | |
+| C15 | Found through the phone call activity | Open a conversation whose External ID is the ID of a real C4C phone call activity, ideally one whose contact has a different number saved | The activity's contact is shown. Pod log: `customer via=activity`. | |
+| C16 | Falls back to the phone number | Open a conversation whose External ID matches no activity but whose number is saved on a contact | That contact is shown. Pod log: `customer via=phone`. | |
+| C17 | Customer outside the usual territory | Open a conversation for a contact the technical user's team would not normally own | Found, with the same data a normal user sees. If it shows as unknown, the user has a data restriction (`docs/C4C-ODATA.md` 1.4). | |
+| C18 | Read-only | With `ALLOW_WRITES: "false"`, open an unknown caller | Options greyed out, note says saving is turned off, nothing is sent to C4C. | |
+| C19 | First real write (only when writes are wanted) | `ALLOW_WRITES: "true"`; save a number on a throwaway contact in the test tenant | The number is in Mobile (or Phone if Mobile is taken), never over an existing number; C4C shows the technical user as the changer. | |
 
 ## Exit criteria for the POC
 
 * C1, C2, C5 pass: the nested design is viable for voice + WhatsApp.
 * C4 passes, or Nubitel confirms a login approach that works inside C4C.
 * C6 shows the customer header in under ~1 second and all sections in under ~3 seconds on typical data.
-* Decision recorded: Option A or B.
+* Decision recorded: Option B (signed token). Nubitel confirms that the External ID it keeps for a conversation is the C4C phone call activity ID (C15).
