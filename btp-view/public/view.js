@@ -387,7 +387,8 @@
     },
     reco: (box, d) => {
       const rows = d.rows || [];
-      $('#recoPeriod').textContent = `· ${d.label || d.period} · ${rows.length} items`;
+      // d.note is set when this month has no snapshot yet and the newest earlier one is shown instead
+      $('#recoPeriod').textContent = `· ${d.label || d.period}${d.note ? ' (' + d.note + ')' : ''} · ${rows.length} items`;
       const wrap = el('div', 'scroll'); wrap.tabIndex = 0; wrap.setAttribute('role', 'region'); wrap.setAttribute('aria-label', 'Recommended products, scrollable');
       const table = el('table', 'tbl');
       const head = el('tr');

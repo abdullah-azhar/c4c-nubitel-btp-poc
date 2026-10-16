@@ -6,6 +6,7 @@
  *   node local/adapter-test.js --print    also prints the GET requests (to replay against a tenant)
  */
 const { createC4CAdapter } = require('../lib/c4c-adapter');
+const { currentPeriod, monthLabel } = require('../lib/period');
 
 let failed = 0; let n = 0;
 const check = (name, ok, detail = '') => { n++; if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  (' + detail + ')' : ''}`); };
@@ -15,9 +16,9 @@ const CONTACT = { ObjectID: 'OBJ1', ContactID: '1001', Name: 'Jenna Hopkins', Ac
 
 function fake(handlers) {
   const log = [];
-  const t = async (method, path, params, body) => {
-    log.push({ method, path, params: params || {}, body });
-    for (const h of handlers) { const r = h(method, path, params || {}, body); if (r !== undefined) return r; }
+  const t = async (method, path, params, body, service) => {
+    log.push({ method, path, params: params || {}, body, service: service || 'std' });
+    for (const h of handlers) { const r = h(method, path, params || {}, body, service); if (r !== undefined) return r; }
     return { results: [] };
   };
   t.log = log;
@@ -84,8 +85,49 @@ function fake(handlers) {
   check('Open tasks: total comes from C4C, priorities mapped, dates in Malaysia time', r.status === 'ok' && r.data.count === 7 && r.data.items.length === 3 && r.data.items[0].priority === 'High' && r.data.items[1].priority === 'Normal' && r.data.items[2].priority === 'Low' && r.data.items[0].due === '2026-10-15', JSON.stringify(r.data.items.map((i) => i.due + '/' + i.priority)));
   check('Open tasks query: status Open or In Process only, soonest due first, counted', /MainAccountPartyID eq '900000001' and \(Status eq '1' or Status eq '2'\)/.test(tq.$filter) && tq.$orderby === 'DueDateTime asc' && tq.$inlinecount === 'allpages');
 
-  r = await createC4CAdapter({}, fake([])).getSection('reco', { accountId: '900000001' });
-  check('Recommendations say "not_configured" until the object is known (no guessed data)', r.status === 'not_configured');
+  // --- recommendations: the custom monthly snapshot ---
+  const cur = currentPeriod();
+  const SNAP = [
+    { ProductID: 'P1', RecType: 'Special Price', Quantity: '300.00000000000000', QuantityUnitCode: 'ZBO' },
+    { ProductID: 'P2', RecType: 'Repeat Order - Low Priority', Quantity: '12.50000000000000', QuantityUnitCode: 'XBX' },
+    { ProductID: 'P9', RecType: 'Repeat Order - Low Priority', Quantity: '5.00000000000000', QuantityUnitCode: 'QQQ' },
+  ];
+  const nameAndUnitHandlers = [
+    (m, p) => (p === 'ProductCollection' ? { results: [{ ProductID: 'P1', Description: 'BETAMOX 250MG GRAN 60ML BTL', Language: 'EN' }, { ProductID: 'P2', Description: "DEPOCON INJ 10'S BOX", Language: 'EN' }] } : undefined),
+    (m, p) => (p === 'SnapshotProdRecQuantityUnitCodeCollection' ? { results: [{ Code: 'ZBO', Description: 'Bottle' }, { Code: 'XBX', Description: 'Box' }] } : undefined),
+  ];
+  const snapshotFor = (monthRows) => (m, p, q) => {
+    if (p !== 'SnapshotProdRecCollection') return undefined;
+    if (/ le /.test(q.$filter)) return { results: [{ SnapshotMonthYear: '2026-08' }] };           // "newest month up to now"
+    const key = /SnapshotMonthYear eq '([\d-]+)'/.exec(q.$filter)[1];
+    return { results: monthRows[key] || [] };
+  };
+
+  t = fake([snapshotFor({ [cur.key]: SNAP }), ...nameAndUnitHandlers]);
+  a = createC4CAdapter({}, t);
+  r = await a.getSection('reco', { accountId: '900000001', contactId: '1001' });
+  const rq = t.log.find((c) => c.path === 'SnapshotProdRecCollection');
+  check('Recommendations: the account\'s rows for this month, in the custom service, flagged for reports, by type then quantity',
+    r.status === 'ok' && r.data.period === cur.key && rq.service === 'reco' && rq.params.$filter === `C4CCustomerID eq '900000001' and SnapshotMonthYear eq '${cur.key}' and ShowInReport eq 'Yes'` && rq.params.$orderby === 'RecTypeID asc,Quantity desc', rq.params.$filter);
+  check('Recommendations are shown with product names, unit names, tidy quantities and the type as the reason',
+    r.data.rows[0].product === 'BETAMOX 250MG GRAN 60ML BTL' && r.data.rows[0].qty === 300 && r.data.rows[0].uom === 'Bottle' && r.data.rows[0].reason === 'Special Price' && r.data.rows[1].qty === 12.5 && r.data.rows[1].uom === 'Box', JSON.stringify(r.data.rows[1]));
+  check('A product without a name shows its ID, an unknown unit shows its code', r.data.rows[2].product === 'Product P9' && r.data.rows[2].uom === 'QQQ');
+  check('All product names come from one call', t.log.filter((c) => c.path === 'ProductCollection').length === 1 && /ProductID eq 'P1' or ProductID eq 'P2' or ProductID eq 'P9'/.test(t.log.find((c) => c.path === 'ProductCollection').params.$filter));
+  await a.getSection('reco', { accountId: '900000001' });
+  check('The unit names are fetched once and remembered', t.log.filter((c) => c.path === 'SnapshotProdRecQuantityUnitCodeCollection').length === 1);
+
+  t = fake([snapshotFor({ '2026-08': SNAP }), ...nameAndUnitHandlers]);
+  r = await createC4CAdapter({}, t).getSection('reco', { accountId: '900000001' });
+  check('No snapshot for this month: "empty" (and no silent switch to an older month)', r.status === 'empty' && t.log.filter((c) => c.path === 'SnapshotProdRecCollection').length === 1);
+
+  t = fake([snapshotFor({ '2026-08': SNAP }), ...nameAndUnitHandlers]);
+  r = await createC4CAdapter({ recoFallbackLatest: true }, t).getSection('reco', { accountId: '900000001' });
+  const lq = t.log.find((c) => / le /.test(c.params.$filter || ''));
+  check('With the fallback on, the newest earlier snapshot is shown and labelled as such', r.status === 'ok' && r.data.period === '2026-08' && r.data.label === 'Aug 2026' && r.data.note === 'latest available' && !!lq && lq.params.$orderby === 'SnapshotMonthYear desc', `${r.data && r.data.label} ${r.data && r.data.note}`);
+
+  r = await createC4CAdapter({}, fake([snapshotFor({ [cur.key]: SNAP }), () => { throw new Error('names are down'); }])).getSection('reco', { accountId: '900000001' });
+  check('If the name lookups fail the table still shows (IDs and codes instead of names)', r.status === 'ok' && r.data.rows[0].product === 'Product P1' && r.data.rows[0].uom === 'ZBO');
+  check('Month labels: 2026-08 is Aug 2026', monthLabel('2026-08') === 'Aug 2026');
 
   // --- search ---
   t = fake([
@@ -122,11 +164,13 @@ function fake(handlers) {
 
   // Replay list: the GET requests, so they can be run against a tenant
   if (process.argv.includes('--print')) {
-    const all = fake([]); const ad = createC4CAdapter({ activityField: 'GroupwareItemID' }, all);
+    const all = fake([snapshotFor({ '2026-08': SNAP }), ...nameAndUnitHandlers]);
+    const ad = createC4CAdapter({ activityField: 'GroupwareItemID', recoFallbackLatest: true }, all);
     await ad.resolve({ phone: '+60 111 222 333', externalId: 'X1' });
     await ad.getSection('order', { accountId: 'ACC' }); await ad.getSection('tasks', { accountId: 'ACC' });
+    await ad.getSection('reco', { accountId: 'ACC' });
     await ad.searchContacts('ab'); await ad.searchAccounts('ab');
-    console.log('\nGET requests:\n' + JSON.stringify(all.log.filter((c) => c.method === 'GET').map((c) => ({ path: c.path, params: c.params })), null, 1));
+    console.log('\nGET requests:\n' + JSON.stringify(all.log.filter((c) => c.method === 'GET').map((c) => ({ service: c.service, path: c.path, params: c.params })), null, 1));
   }
 
   console.log(`\n${n - failed}/${n} adapter checks passed`);

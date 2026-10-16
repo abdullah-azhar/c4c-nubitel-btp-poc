@@ -1,13 +1,14 @@
 # Using real C4C data
 
 Test tenant: `https://my335945.crm.ondemand.com`
-Service root: `/sap/c4c/odata/v1/c4codataapi/`
+Services: standard `/sap/c4c/odata/v1/c4codataapi/` and the custom recommendation service
+`/sap/c4c/odata/cust/v1/duopharma_snapshotproductrecommendation/`
 
 The real adapter (`createC4CAdapter` in `lib/c4c-adapter.js`) is written against this
 tenant's `$metadata` and data. The exact requests it builds were replayed against the
-tenant and all returned HTTP 200; `npm run test:adapter` checks the mapping logic with a
-fake C4C (21 checks). It has **not yet run end to end** because that needs the technical
-user (below). Until `DATA_SOURCE` is set to `c4c` everything runs on mock data.
+tenant (all HTTP 200), and `npm run test:adapter` checks the mapping logic with a fake C4C
+(29 checks). It has **not yet run end to end** because that needs the technical user (below).
+Until `DATA_SOURCE` is set to `c4c` everything runs on mock data.
 
 ## Confirmed mapping
 
@@ -18,12 +19,15 @@ user (below). Until `DATA_SOURCE` is set to `c4c` everything runs on mock data.
 | Who is calling (by activity) | `PhoneCallCollection` | `<C4C_ACTIVITY_FIELD> eq '<external ID>'` | MainContactPartyID (= ContactID) |
 | Last sales order | `CustomerOrderCollection` | `BuyerPartyID eq '<AccountID>'`, `$orderby=DateTime desc`, `$top=1` | ID, DateTime, NetAmount, NetAmountCurrencyCode, OrderExternalLifeCycleStatusCodeText |
 | Open tasks | `TasksCollection` | `MainAccountPartyID eq '<AccountID>' and (Status eq '1' or Status eq '2')`, `$orderby=DueDateTime asc`, `$inlinecount=allpages` | ID, Subject, DueDateTime, StatusText, PriorityCode |
+| Recommended products | custom: `SnapshotProdRecCollection` | `C4CCustomerID eq '<AccountID>' and SnapshotMonthYear eq '<YYYY-MM>' and ShowInReport eq 'Yes'`, `$orderby=RecTypeID asc,Quantity desc`, `$top=50` | ProductID, RecType, Quantity, QuantityUnitCode |
+| Product names | `ProductCollection` | `ProductID eq 'a' or ProductID eq 'b' …` (one call for the whole table) | Description |
+| Unit names | custom: `SnapshotProdRecQuantityUnitCodeCollection` | the whole list, remembered for 6 hours | Code → Description (XBX = Box, ZBO = Bottle) |
 | Search contacts | `ContactCollection` | `substringof('<text>',Name)` and `substringof('<text>',AccountFormattedName)` | as above |
 | Search accounts | `CorporateAccountCollection` | `substringof('<text>',Name)` | AccountID, Name |
 | Save number / create contact | `ContactCollection` | PATCH `Mobile` (or `Phone` if Mobile is taken), POST new contact | not yet tried, see below |
 
-Account, contact, order and task all join on the same 9-digit **AccountID**
-(`BuyerPartyID` on orders, `MainAccountPartyID` on tasks).
+Account, contact, order, task and recommendation all join on the same **AccountID**
+(`BuyerPartyID` on orders, `MainAccountPartyID` on tasks, `C4CCustomerID` in the snapshot).
 
 ## What we learned about this tenant
 
@@ -40,30 +44,44 @@ Account, contact, order and task all join on the same 9-digit **AccountID**
 * `substringof` is case-insensitive. The owner name does not come through `$expand`, so it
   is a separate lookup (best effort: a missing owner never breaks the screen).
 * Phone call activities have **no `ExternalID` field**.
+* **The recommendation snapshot** holds about 250,000 rows, one per account, month and
+  product. The month is stored as text `YYYY-MM`. Recommendation types seen: RT02 Up-Sell,
+  RT03 Special Price, RT07 Repeat Order - Low Priority. A typical account has about 6 rows
+  in a month (up to 34), which is why the table scrolls. The snapshot has no product name,
+  so names come from `ProductCollection`.
+* **This tenant has no snapshot for the current month.** Snapshots exist for some past
+  months only (the newest is `2026-08`). With the current-month rule the section is empty;
+  see the setting below.
+
+## Decisions I made on the recommendations (please confirm)
+
+1. **Only rows with `ShowInReport = 'Yes'`** are shown. About a quarter of the rows have a
+   different value.
+2. **Order:** recommendation type first (RT02 Up-Sell, RT03 Special Price, then RT07 Repeat
+   Order), biggest quantity first inside a type. The "Why" column shows the type.
+3. **Current month and year**, as requested (in Malaysia time). If this month's snapshot
+   does not exist yet, `C4C_RECO_FALLBACK_LATEST=true` shows the newest earlier snapshot and
+   labels it, for example "Aug 2026 (latest available)". It is switched **on** in the Kyma
+   ConfigMap because the test tenant has no October snapshot; set it to `"false"` to show
+   only the current month. When does the real snapshot for a new month get created?
 
 ## Still needed
 
-1. **The monthly recommendations.** Nothing in this service holds product recommendations
-   for a month and year. The only related fields are on quote items
-   (`KUT_Recommendation_ID_KUT`, `KUT_RecommendationType_KUT`). Is it a custom business
-   object with its own OData service (`/sap/c4c/odata/cust/v1/<service>/`), a report, or
-   data in another system? Send me where it lives and which fields hold the account, year,
-   month, product, quantity and unit. Until then the section shows "Not connected to C4C yet".
-2. **Where Nubitel stores its conversation ID on the phone call activity.** There is no
+1. **Where Nubitel stores its conversation ID on the phone call activity.** There is no
    `ExternalID`. Candidates: `GroupwareItemID` (filled on about half the calls in the
    test tenant and filterable), the activity's own `ID` (if Nubitel passes C4C's ID
    back), or a custom field. Put the field name in `C4C_ACTIVITY_FIELD`. Without it
    the view uses the phone number only.
-3. **Sample links** for an account, contact, sales order and task (copy from the browser
+2. **Sample links** for an account, contact, sales order and task (copy from the browser
    bar) to set the open-in-C4C icons exactly.
-4. **A technical user** (below).
+3. **A technical user** (below).
 
 ## Technical user and credentials
 
 Create a dedicated C4C user for the OData calls: **read** access to accounts, contacts,
-sales orders, tasks, phone calls and employees. Give **write** access (contacts only) only
-if agents may create or update contacts from the unknown-caller screen. Do not reuse a
-person's login.
+sales orders, tasks, phone calls, employees, products and the recommendation service. Give
+**write** access (contacts only) only if agents may create or update contacts from the
+unknown-caller screen. Do not reuse a person's login.
 
 Put the credentials into Kyma yourself, so they never pass through a chat or a file.
 In PowerShell (the password prompt does not echo and is not kept in your history):
@@ -85,7 +103,8 @@ recreating the secret, then `kubectl rollout restart deploy/c4c-lean-view -n c4c
    know the field.
 2. Set `DATA_SOURCE: "c4c"` in the ConfigMap, `kubectl apply -k kyma/`, restart the pod.
 3. Test with a customer whose number is saved in C4C, a number that is not, and one that
-   has open tasks and orders. Watch the pod log (`[audit]` lines, phone numbers masked).
+   has open tasks, orders and recommendations. Watch the pod log (`[audit]` lines, phone
+   numbers masked).
 4. Decide `ALLOW_WRITES` on purpose. `true` lets agents change real C4C contacts. The write
    calls (create contact, save number) are written but **not yet tried against the
    tenant**: the property names for create (`AccountID`, `Email`) and the PATCH

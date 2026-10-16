@@ -21,6 +21,9 @@ data:
   C4C_BASE_URL: "https://my335945.crm.ondemand.com"
   # Which PhoneCall field holds Nubitel's conversation ID (e.g. GroupwareItemID). Empty = find the customer by phone number only.
   C4C_ACTIVITY_FIELD: ""
+  # Recommendations are this month's snapshot. The test tenant has no snapshot for the current month, so for testing
+  # show the newest earlier one, labelled "(latest available)". Set to "false" to show only the current month.
+  C4C_RECO_FALLBACK_LATEST: "true"
   # Lets agents create a contact or save the caller's number on a contact (unknown-caller screen).
   # Mock data only for now. Review this before switching DATA_SOURCE to "c4c".
   ALLOW_WRITES: "true"
