@@ -4,7 +4,26 @@ body { font: 13px/1.4 -apple-system, "Segoe UI", Calibri, Arial, sans-serif; col
 .muted { color: #6b7378; }
 .topbar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #fff; border-bottom: 1px solid #dfe5e4; flex-wrap: wrap; }
 .spacer { flex: 1; }
-.calls { font-size: 12px; color: #3d4a4f; padding: 2px 8px; border: 1px solid #dfe5e4; border-radius: 10px; background: #f6f9f8; }
+[hidden] { display: none !important; }
+.app { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.who { display: inline-flex; align-items: center; gap: 8px; padding-left: 10px; border-left: 1px solid #dfe5e4; }
+.agent-name { font-weight: 600; }
+.session-left { font-size: 12px; color: #3d4a4f; padding: 2px 8px; border: 1px solid #dfe5e4; border-radius: 10px; background: #f6f9f8; min-width: 54px; text-align: center; font-variant-numeric: tabular-nums; }
+.session-left.low { color: #b3261e; border-color: #e9b4ae; background: #fdecea; }
+
+/* sign-in */
+.login { flex: 1; display: grid; place-items: center; padding: 16px; }
+.login-card { width: 100%; max-width: 340px; background: #fff; border: 1px solid #dfe5e4; border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.06); }
+.login-card h1 { margin: 0; font-size: 20px; }
+.login-card p { margin: 0; }
+.login-card label { display: flex; flex-direction: column; gap: 3px; font-weight: 600; font-size: 12px; }
+.login-card input { font: inherit; font-weight: 400; height: 34px; padding: 0 10px; border: 1px solid #aeb9bc; border-radius: 6px; }
+.login-card input:focus-visible, .login-card button:focus-visible, button:focus-visible { outline: 2px solid #5b4fc4; outline-offset: 1px; }
+.login-msg { min-height: 18px; color: #b3261e; font-size: 12px; }
+.login-msg.info { color: #3d4a4f; }
+button.primary { background: #3b6fb0; color: #fff; border-color: #3b6fb0; height: 34px; font-weight: 600; }
+.small { font-size: 11px; }
+.cookie-help { border: 1px solid #e9c46a; background: #fff8e1; border-radius: 8px; padding: 10px; font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
 select, button { font: inherit; }
 button { border: 1px solid #3b6fb0; color: #3b6fb0; background: #fff; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
 button:disabled { opacity: .5; cursor: default; }

@@ -1,6 +1,6 @@
 {
   "name": "c4c-nubitel-btp-poc",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "POC: Nubitel embedded in SAP C4C, with a SAP BTP lean customer view embedded in Nubitel",
   "engines": { "node": ">=18" },

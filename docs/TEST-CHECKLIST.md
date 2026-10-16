@@ -29,6 +29,11 @@ Record: Pass / Fail / Notes.
 | L18 | Open Ali, switch away and back | Only "Last sales order" is asked again; footer shows "cache: partial". | |
 | L19 | Press the **refresh icon** | Label shows "Updating…" then "Updated just now"; everything is loaded again. | |
 | L20 | Wait past `CACHE_TTL_SECONDS`, switch back | The chat is loaded from C4C again. | |
+| L21 | Open http://localhost:8081 before signing in | Only the Nubitel sign-in card shows; no conversations. | |
+| L22 | Sign in with a wrong password, then correctly (`james.theng` / `local-demo-only`) | Generic error for the wrong one; after the right one the agent name and a session clock (about 30:00) show. | |
+| L23 | Reload the page, or choose "rebuilt (reloads Nubitel)" and click Accounts | Still signed in; no second sign-in. | |
+| L24 | Open a customer, then press **Sign out** | Back to the sign-in card; the view is empty and its saved customers are gone (footer "0 saved"). | |
+| L25 | Leave the session idle past its limit, then click | Returns to sign-in with "Your session expired". | |
 
 ## Stage 2: real C4C tenant (the decisive tests)
 
@@ -47,6 +52,9 @@ the mock Nubitel URL to C4C as a mashup. Later, repeat with the real Nubitel.
 | C8 | Open in C4C | Click the button | Opens the right account in a new C4C tab. | |
 | C9 | Narrow pane | Resize the mashup pane / browser window | View stays readable; tiles wrap. | |
 | C10 | Session timeout | Leave idle past C4C and Nubitel timeouts | Clear sign-in prompt, no silent blank panel. | |
+| C11 | Sign-in inside the C4C mashup | Open the mock Nubitel in C4C, sign in (Chrome, then Edge, then Safari) | Signed in and stays signed in. If the sign-in card says the browser blocked the cookie, note which browser: that is the third-party cookie risk. | |
+| C12 | Session survives C4C navigation and reload | Sign in, move between C4C screens, reload C4C | Still signed in, no second sign-in. | |
+| C13 | Sign out clears the view | Open a customer, press **Sign out** | Sign-in card shows and the view is empty. Sign in again and open the same customer: it loads from C4C again. | |
 
 ## Exit criteria for the POC
 

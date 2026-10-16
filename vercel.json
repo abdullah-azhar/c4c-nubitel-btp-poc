@@ -6,7 +6,7 @@
   "outputDirectory": "mock-nubitel/public",
   "rewrites": [
     { "source": "/config.js", "destination": "/api/config" },
-    { "source": "/nubitel-api/:path*", "destination": "/api/:path*" }
+    { "source": "/nubitel-api/:route", "destination": "/api/nubitel?route=:route" }
   ],
   "headers": [
     {

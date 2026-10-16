@@ -9,39 +9,71 @@
   <script src="config.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <strong>Mock Nubitel</strong>
-    <span class="muted">stands in for the Nubitel agent app</span>
-    <span class="spacer"></span>
-    <button id="expiry" type="button" title="Send an already-expired token: the view should ask for a new one and still load">Token expiry test</button>
-    <button id="rapid" type="button" title="Switch between chats quickly to test that late data is dropped">Rapid switch test</button>
-  </header>
+  <!-- Sign-in: shown until the server confirms a session -->
+  <section id="login" class="login" hidden>
+    <form id="loginForm" class="login-card" autocomplete="on" novalidate>
+      <h1>Mock Nubitel</h1>
+      <p class="muted">Agent sign-in</p>
+      <label>Username
+        <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+      </label>
+      <label>Password
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <p id="loginMsg" class="login-msg" role="alert"></p>
+      <button id="loginBtn" type="submit" class="primary">Sign in</button>
+      <p class="muted small">Demo environment. A session ends after 30 minutes without activity.</p>
 
-  <div class="layout">
-    <aside class="convs">
-      <div class="convs-head">Assigned conversations</div>
-      <ul id="convList"></ul>
-      <div class="diag-tests">
-        <div class="convs-head">Browser checks</div>
-        <button type="button" data-test="mic">Microphone</button>
-        <button type="button" data-test="clipboard">Clipboard</button>
-        <button type="button" data-test="cookie">Session cookie</button>
-        <ul id="testResults" class="results"></ul>
+      <!-- Shown when sign-in worked but the browser did not keep the cookie inside this frame -->
+      <div id="cookieHelp" class="cookie-help" hidden>
+        <strong>Your browser blocked the sign-in cookie inside this frame.</strong>
+        <p>Third-party cookies are blocked, so the login cannot stay signed in while Nubitel runs inside C4C.</p>
+        <button id="openTab" type="button">Open Nubitel in a new tab</button>
+        <button id="allowCookies" type="button" hidden>Allow cookies for this frame</button>
       </div>
-    </aside>
+    </form>
+  </section>
 
-    <section class="chat">
-      <div id="chatHead" class="chat-head">Select a conversation</div>
-      <div id="chatBody" class="chat-body"></div>
-      <div class="chat-input"><input type="text" placeholder="Write a reply" disabled><button type="button" disabled>Send</button></div>
-    </section>
+  <div id="app" class="app" hidden>
+    <header class="topbar">
+      <strong>Mock Nubitel</strong>
+      <span class="muted">stands in for the Nubitel agent app</span>
+      <span class="spacer"></span>
+      <button id="expiry" type="button" title="Send an already-expired token: the view should ask for a new one and still load">Token expiry test</button>
+      <button id="rapid" type="button" title="Switch between chats quickly to test that late data is dropped">Rapid switch test</button>
+      <span class="who">
+        <span id="agentName" class="agent-name"></span>
+        <span id="sessionLeft" class="session-left" title="Time left before the session ends for inactivity"></span>
+        <button id="logout" type="button">Sign out</button>
+      </span>
+    </header>
 
-    <section class="embed">
-      <!-- The BTP view. Only the permissions it needs; data goes in by postMessage, never in the URL. -->
-      <iframe id="view" title="C4C customer view"
-              sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-              referrerpolicy="no-referrer"></iframe>
-    </section>
+    <div class="layout">
+      <aside class="convs">
+        <div class="convs-head">Assigned conversations</div>
+        <ul id="convList"></ul>
+        <div class="diag-tests">
+          <div class="convs-head">Browser checks</div>
+          <button type="button" data-test="mic">Microphone</button>
+          <button type="button" data-test="clipboard">Clipboard</button>
+          <button type="button" data-test="cookie">Session cookie</button>
+          <ul id="testResults" class="results"></ul>
+        </div>
+      </aside>
+
+      <section class="chat">
+        <div id="chatHead" class="chat-head">Select a conversation</div>
+        <div id="chatBody" class="chat-body"></div>
+        <div class="chat-input"><input type="text" placeholder="Write a reply" disabled><button type="button" disabled>Send</button></div>
+      </section>
+
+      <section class="embed">
+        <!-- The BTP view. Only the permissions it needs; data goes in by postMessage, never in the URL. -->
+        <iframe id="view" title="C4C customer view"
+                sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                referrerpolicy="no-referrer"></iframe>
+      </section>
+    </div>
   </div>
 
   <script src="nubitel.js"></script>

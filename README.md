@@ -46,6 +46,12 @@ Open **http://localhost:8081**. The three parts run on ports 8081 (C4C host),
 8082 (Nubitel) and 8083 (BTP view), so the browser treats them as different
 origins and applies real cross-origin rules.
 
+Sign in to the mock Nubitel first. **Local demo users** (they exist nowhere else):
+`james.theng` or `nur.aina`, password `local-demo-only`. The session cookie is
+`HttpOnly; Secure; SameSite=None; Partitioned`, the session ends after 30 minutes
+without activity, and **Sign out** makes the view forget every customer it held.
+The deployed copy on Vercel has its own demo users: see `docs/DEPLOY.md`.
+
 Try the conversations on the left; each one exercises a case:
 
 | Conversation | Shows |
@@ -66,7 +72,7 @@ top of the C4C host. Open http://localhost:8083 directly: it shows a locked scre
 ```bash
 npm i -D playwright && npx playwright install chromium
 CACHE_TTL_SECONDS=12 npm start   # in one terminal (short saved-copy life so expiry can be tested)
-npm test                         # in another: 49 checks, screenshots in local/screens/
+npm test                         # in another: 66 checks, screenshots in local/screens/
 ```
 
 On Windows PowerShell set the variable first: `$env:CACHE_TTL_SECONDS = '12'`.

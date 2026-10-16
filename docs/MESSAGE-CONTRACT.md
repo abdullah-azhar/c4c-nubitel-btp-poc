@@ -3,12 +3,14 @@
 This is what Nubitel needs to build on their side. The mock Nubitel in this POC
 (`mock-nubitel/public/nubitel.js`) is a working reference implementation.
 
-Nubitel only has to do three things:
+Nubitel only has to do four things (after the agent has signed in to Nubitel):
 
 1. When the agent opens a conversation, get a **signed token** from its own backend
    and post `conversation.open` with that token.
 2. Answer `view.refresh` with `conversation.open` (`refresh: true`) and a new token.
 3. Answer `view.needToken` with `token.update` and a new token.
+4. When the agent **signs out or the session ends**, post `session.end` so the view
+   forgets every customer it holds.
 
 The view then calls C4C itself through BTP. Nubitel never calls C4C for this view.
 
@@ -63,6 +65,12 @@ Answer to `view.needToken`. Replaces the token without resetting the screen.
 Optional. Clears the view and its saved copy when a conversation is wrapped up.
 `{ v: 1, type: "conversation.close", conversationId }`
 
+### `session.end`
+**Send it whenever the agent signs out or Nubitel's session ends** (idle timeout, expiry,
+another login). The view drops every saved customer, closes any popup and returns to
+"Waiting for a conversation", so no customer data stays in the browser after the agent
+has left. `{ v: 1, type: "session.end" }`
+
 ## Messages from the view to Nubitel
 
 | `type` | When | Fields |
@@ -98,6 +106,25 @@ Reference: `lib/token.js` (`sign` and `verify`). The view sends it as
 external ID from the token, never from the browser, so a token can only read its own
 customer. For production, switch to an asymmetric key (Nubitel signs with a private
 key, BTP verifies with the public key) and agree key rotation.
+
+## Nubitel's own sign-in (what the mock does)
+
+The view does not sign agents in; Nubitel does. The mock Nubitel shows how it should
+behave when it runs **inside a C4C iframe**, which is where sign-in usually breaks:
+
+* **Session cookie:** `HttpOnly; Secure; SameSite=None; Partitioned`. `SameSite=None`
+  is required because Nubitel is a different site from C4C; `Partitioned` (CHIPS) keeps
+  the cookie working in Chrome and Edge when third-party cookies are blocked. Safari
+  blocks third-party cookies outright, so the mock detects a dropped cookie right after
+  sign-in and offers "Open Nubitel in a new tab" or the Storage Access API.
+* **Server-side session** with a sliding idle timeout (30 minutes) and an absolute
+  limit (8 hours). The browser holds no identity of its own: the **agent ID in the view
+  token comes from the session**, and the phone number and activity external ID come
+  from the server's own record of the conversation, never from the page.
+* **CSRF:** sign-in, sign-out and token calls need a custom header (`X-NB: 1`) that a
+  page on another site cannot send. Wrong passwords get one generic message and are
+  rate limited.
+* **Sign-out and expiry** send `session.end` to the view (above).
 
 ## What the view asks C4C
 

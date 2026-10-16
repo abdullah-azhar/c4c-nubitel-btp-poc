@@ -75,6 +75,13 @@ You will set its environment in step 4, once you have the Vercel URL.
    | `HOST_ORIGIN` | `https://<tenant>.crm.ondemand.com` |
    | `TOKEN_SECRET` | a long random string (same value goes to BTP) |
    | `DATA_SOURCE` | `mock` |
+   | `MOCK_USERS` | JSON of demo agents, e.g. `[{"id":"james.theng","name":"James Theng","password":"<choose one>"}]`. Add it as a **sensitive** variable. Nobody can sign in without it. |
+   | `SESSION_SECRET` | a long random string that signs the sign-in cookie (separate from `TOKEN_SECRET`) |
+
+   The mock Nubitel asks agents to sign in. The demo users and password of the deployed
+   copy are kept in `.env.nubitel` in the repo folder (git-ignored). To change them, edit
+   `MOCK_USERS` in Vercel and redeploy. Sessions last 30 minutes without activity
+   (`SESSION_IDLE_SECONDS`) and 8 hours at most (`SESSION_MAX_HOURS`).
 
    Redeploy after adding them (Deployments → … → Redeploy).
 4. **Check Deployment Protection.** With the default *Standard Protection* the

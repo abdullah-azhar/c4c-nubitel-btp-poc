@@ -38,14 +38,56 @@ const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); c
   const settled = () => view.locator('.skel').first().waitFor({ state: 'detached', timeout: 12000 });
   const freshLoad = async () => { await view.locator('.skel').first().waitFor({ state: 'attached', timeout: 5000 }); await settled(); };
   const cacheTxt = () => view.locator('#diagCache').textContent();
-  const mint = async (cid, phone, externalId) => (await (await fetch(NUB + '/nubitel-api/token', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cid, phone, externalId, agent: 'test' }),
-  })).json()).token;
+  // Runs a request inside the Nubitel frame, so it carries the agent's session cookie like the page does.
+  const nubitelFrame = () => page.frames().find((f) => f.url().startsWith(NUB));
+  const inNubitel = (fn, arg) => nubitelFrame().evaluate(fn, arg);
+  const post = (path, body) => inNubitel(async ({ path, body }) => {
+    const r = await fetch('/nubitel-api/' + path, { method: 'POST', headers: { 'X-NB': '1', 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    return { status: r.status, json: await r.json().catch(() => null) };
+  }, { path, body });
+  const mint = async (cid) => (await post('token', { cid })).json.token;
+  const DEMO = { username: 'james.theng', password: 'local-demo-only' };   // local test user, see local/run-all.js
+  const signIn = async () => {
+    await nb.locator('#username').fill(DEMO.username);
+    await nb.locator('#password').fill(DEMO.password);
+    await nb.locator('#loginBtn').click();
+    await nb.locator('#app').waitFor({ state: 'visible', timeout: 8000 });
+  };
 
   // 1. Nesting renders and waits for a conversation
-  await view.locator('#idle').waitFor({ timeout: 8000 });
+  await view.locator('#idle').waitFor({ state: 'attached', timeout: 8000 });   // the app (and the view in it) is hidden until sign-in
   check('Three-layer nesting renders (C4C > Nubitel > BTP view)', true);
   check('Idle screen says it is waiting for a conversation', /Waiting for a conversation/.test(await view.locator('#idle').textContent()));
+
+  // 1b. Nubitel sign-in: nothing is available before it
+  await nb.locator('#login').waitFor({ state: 'visible', timeout: 8000 });
+  await page.screenshot({ path: path.join(OUT, '00-nubitel-login.png') });
+  check('Before sign-in only the login screen shows (no app, no conversations)', (await nb.locator('#app').isHidden()) && (await nb.locator('#convList li').count()) === 0);
+  const pre = [await fetch(NUB + '/nubitel-api/conversations'), await fetch(NUB + '/nubitel-api/session'),
+    await fetch(NUB + '/nubitel-api/token', { method: 'POST', headers: { 'X-NB': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ cid: 'conv-2294' }) })];
+  check('Without a session the conversations, session and token calls answer 401', pre.every((r) => r.status === 401), pre.map((r) => r.status).join(','));
+  const noHeader = await fetch(NUB + '/nubitel-api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(DEMO) });
+  check('A sign-in without the X-NB header (cross-site style request) is refused', noHeader.status === 403, `status=${noHeader.status}`);
+  await nb.locator('#username').fill(DEMO.username);
+  await nb.locator('#password').fill('wrong-password');
+  await nb.locator('#loginBtn').click();
+  await nb.locator('#loginMsg', { hasText: 'Wrong username or password' }).waitFor({ timeout: 5000 });
+  check('A wrong password is refused with a generic message and no session', (await nb.locator('#app').isHidden()) && !(await page.context().cookies()).some((c) => c.name === 'nb_session'));
+  let lim; for (let i = 0; i < 6; i++) lim = await fetch(NUB + '/nubitel-api/login', { method: 'POST', headers: { 'X-NB': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'rate.test', password: 'bad' + i }) });
+  check('Repeated wrong passwords are rate limited (429)', lim.status === 429, `status=${lim.status}`);
+
+  await signIn();
+  check('Correct sign-in opens the app and shows the agent and session clock', (await nb.locator('#agentName').textContent()) === 'James Theng' && /^(29|30):\d\d$/.test(await nb.locator('#sessionLeft').textContent()), await nb.locator('#sessionLeft').textContent());
+  check('The agent\'s conversations come from the server', (await nb.locator('#convList li').count()) === 7);
+  const ck = (await page.context().cookies()).find((c) => c.name === 'nb_session');
+  check('Session cookie is HttpOnly, Secure and SameSite=None (usable inside a C4C iframe)', !!ck && ck.httpOnly && ck.secure && ck.sameSite === 'None', ck ? `httpOnly=${ck.httpOnly} secure=${ck.secure} sameSite=${ck.sameSite}` : 'no cookie');
+  check('Page scripts cannot read the session cookie', !(await inNubitel(() => document.cookie)).includes('nb_session'));
+  await page.reload();
+  await nb.locator('#app').waitFor({ state: 'visible', timeout: 8000 });
+  check('The session survives a reload of Nubitel (no second sign-in)', (await nb.locator('#login').isHidden()) && (await nb.locator('#convList li').count()) === 7);
+  const spoof = await post('token', { cid: 'conv-2294', phone: 'EVIL', agent: 'someone-else' });
+  const claims = JSON.parse(Buffer.from(spoof.json.token.split('.')[0], 'base64url').toString('utf8'));
+  check('Token identity comes from the session and the server record, not the browser', claims.agent === 'james.theng' && claims.phone === '+60 8347 2856' && claims.ext === 'NUB-CALL-100234', JSON.stringify({ agent: claims.agent, phone: claims.phone }));
 
   // 2. The link is not public: opened directly it is locked
   const direct = await browser.newPage();
@@ -58,6 +100,26 @@ const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); c
   const raw = await Promise.all(['/', '/config.js', '/view.js', '/view.css'].map((p) => fetch(VIEW + p)));
   check('Page, config and scripts are refused unless loaded as a frame', raw.every((r) => r.status === 403), raw.map((r) => r.status).join(','));
   check('/health stays open for probes', (await fetch(VIEW + '/health')).status === 200);
+
+  // 2b. Signing out wipes the view; a short session ends on its own
+  await open('Jenna Hopkins');
+  await name('Jenna Hopkins');
+  await settled();
+  check('(setup) the view holds a saved copy before sign-out', /cache: \S+ · [1-9]\d* saved/.test(await cacheTxt()), await cacheTxt());
+  await nb.locator('#logout').click();
+  await nb.locator('#login').waitFor({ state: 'visible', timeout: 5000 });
+  await page.waitForTimeout(600);
+  const viewIdle = await view.locator('#idle').evaluate((n) => !n.hidden);   // the app is hidden now, so check the view's own state
+  check('Signing out returns to the login screen and empties the view', (await nb.locator('#app').isHidden()) && viewIdle);
+  check('Signing out makes the view forget every customer it held', /0 saved/.test(await cacheTxt()), await cacheTxt());
+  const afterOut = await inNubitel(async () => (await fetch('/nubitel-api/conversations')).status);
+  check('After sign-out the session cookie is gone and the API answers 401', !(await page.context().cookies()).some((c) => c.name === 'nb_session') && afterOut === 401, `status=${afterOut}`);
+  await post('login', { ...DEMO, idleSeconds: 4 });        // test hook: a session that lasts 4 seconds
+  await page.reload();
+  await nb.locator('#app').waitFor({ state: 'visible', timeout: 8000 });
+  await nb.locator('#login').waitFor({ state: 'visible', timeout: 9000 });
+  check('An idle session ends on its own and asks the agent to sign in again', /expired/i.test(await nb.locator('#loginMsg').textContent()), await nb.locator('#loginMsg').textContent());
+  await signIn();
 
   // 3. Known customer: the new layout and sections
   await open('Jenna Hopkins');
@@ -173,7 +235,7 @@ const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); c
   check('No mixed data after rapid switch', (await view.locator('[data-section="tasks"] .task').count()) === 4);
 
   // 9. Security checks on the data API
-  const tok = await mint('conv-2294', '+60 8347 2856', 'NUB-CALL-100234');
+  const tok = await mint('conv-2294');
   const auth = { headers: { Authorization: 'Bearer ' + tok } };
   const none = await Promise.all(['/api/customer', '/api/section/order', '/api/contacts/search?q=siti', '/api/accounts/search?q=klinik'].map((p) => fetch(VIEW + p)));
   const forged = await fetch(VIEW + '/api/customer', { headers: { Authorization: 'Bearer abc.def' } });
@@ -263,6 +325,8 @@ const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); c
   await page.locator('.nav button', { hasText: 'Accounts' }).click();
   await page.locator('#log li.fail', { hasText: 'reloaded' }).waitFor({ timeout: 5000 });
   check('Harness flags a Nubitel reload when the mashup is rebuilt', true);
+  await nb.locator('#app').waitFor({ state: 'visible', timeout: 8000 });
+  check('The agent is still signed in after the mashup was rebuilt', (await nb.locator('#login').isHidden()) && (await nb.locator('#agentName').textContent()) === 'James Theng');
 
   const relevantErrors = consoleErrors.filter((t) => !/frame-ancestors|Refused to frame|ERR_BLOCKED|favicon|status of (401|403|404|409|502)/i.test(t)); // 502 = the simulated failing order section
   check('No unexpected console errors', relevantErrors.length === 0, relevantErrors.slice(0, 3).join(' | '));

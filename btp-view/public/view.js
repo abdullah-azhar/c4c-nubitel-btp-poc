@@ -67,6 +67,13 @@
       if (current && m.conversationId === current.cid) showIdle(); else updateDiag();
       return;
     }
+    if (m.type === 'session.end') {
+      // The agent signed out or the session ended: forget every customer held in this page.
+      cache.clear(); picks.clear();
+      if (renewal) renewal.done(false);
+      showIdle();
+      return;
+    }
     if (m.type === 'token.update') {
       if (current && renewal && m.conversationId === current.cid && typeof m.token === 'string') { current.token = m.token; renewal.done(true); }
       else dropped++;
